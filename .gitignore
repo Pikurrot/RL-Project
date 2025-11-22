@@ -210,3 +210,9 @@ __marimo__/
 # Custom
 *.lock
 *.toml
+*.gif
+*.csv
+*.zip
+*.mp4
+DKONG/wandb/
+DKONG/logs/
