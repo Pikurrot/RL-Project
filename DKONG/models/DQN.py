@@ -4,7 +4,7 @@ import gymnasium as gym
 from stable_baselines3 import DQN as DQNsb3
 from pathlib import Path
 
-from _logging import WandbCallback
+from _logging import build_callbacks
 from models.base import BaseModel
 
 
@@ -24,6 +24,9 @@ class DQN(BaseModel, DQNsb3):
 			gamma=self.dqn_config["gamma"],
 			train_freq=self.dqn_config["train_freq"],
 			target_update_interval=self.dqn_config["target_update_interval"],
+			exploration_fraction=self.dqn_config["exploration_fraction"],
+			exploration_initial_eps=self.dqn_config["exploration_initial_eps"],
+			exploration_final_eps=self.dqn_config["exploration_final_eps"],
 			tensorboard_log=str(Path(self.config["monitor_dir"]) / "tb"),
 			verbose=1,
 			device=device
@@ -34,14 +37,9 @@ class DQN(BaseModel, DQNsb3):
 		self,
 		progress_bar: bool = True
 	):
-		wandb_config = self.config["wandb"]
+		callbacks = build_callbacks(self.config, self.checkpoints_dir)
 		super().learn(
 			progress_bar=progress_bar,
 			total_timesteps=self.total_timesteps,
-			callback=WandbCallback(
-				config=self.config,
-				model_save_path=self.checkpoints_dir,
-				model_save_freq=self.config["model"]["save_freq"],
-				gradient_save_freq=wandb_config["gradient_save_freq"],
-			)
+			callback=callbacks,
 		)

@@ -5,25 +5,45 @@ video_dir: ./videos/
 wandb:
   entity: paradigms-team
   project: DonkeyKong
-  run_name: dqn_donkeykong_baseline
+  run_name: ppo_baseline
   gradient_save_freq: 100
 
 env:
   env_id: ALE/DonkeyKong-v5
   n_envs: 9
-  video_every: 10000 # set to null to disable
-  video_length: 2000 # max frames to record
+  frame_stack: 4 # number of frames to stack
+
+eval:
+  eval_freq: 50000 # save model every n steps
+  n_eval_episodes: 5
+  video_every: 1 # record every n evaluations
+  video_length: 1000  # max frames to record
 
 model:
+  select_model: PPO
   save_freq: 10000 # save model every n steps
   DQN:
     policy: CnnPolicy
     learning_rate: 1e-4
-    buffer_size: 100_000 # size of the replay buffer (in transitions)
+    buffer_size: 50_000 # size of the replay buffer (in transitions)
     learning_starts: 1000 # number of transitions collected before learning starts
     batch_size: 32 # size of the batch
     tau: 1.0 # target network update coefficient (intuitively, the speed of the target network to follow the primary network)
     gamma: 0.99 # discount factor
     train_freq: 4 # update the network every n steps
-    target_update_interval: 10_000 # update the target network every n steps
-    total_timesteps: 10_000 # for training
+    target_update_interval: 1_000 # update the target network every n steps
+    exploration_fraction: 0.1 # fraction of the training steps for exploration
+    exploration_initial_eps: 1.0 # initial exploration epsilon
+    exploration_final_eps: 0.01 # final exploration epsilon
+    total_timesteps: 100_000 # for training
+  PPO:
+    policy: CnnPolicy
+    learning_rate: 1e-4
+    n_steps: 2048
+    batch_size: 256
+    n_epochs: 10
+    gamma: 0.99
+    clip_range: 0.1
+    ent_coef: 0.01 # entropy coefficient for the loss calculation
+    vf_coef: 0.5 # value function coefficient for the loss calculation
+    total_timesteps: 1_000_000 # for training

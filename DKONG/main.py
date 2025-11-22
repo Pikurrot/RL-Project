@@ -15,6 +15,7 @@ import ale_py
 
 from environment.env import make_vec_env
 from models.DQN import DQN
+from models.PPO import PPO
 from _logging import init_wandb, load_config
 
 gym.register_envs(ale_py)
@@ -28,7 +29,12 @@ if __name__ == "__main__":
 	print(f"Using device: {device}")
 	
 	vec_env = make_vec_env(config)
-	
-	model = DQN(config, vec_env, device=device)
+	if config["model"]["select_model"] == "DQN":
+		model = DQN(config, vec_env, device=device)
+	elif config["model"]["select_model"] == "PPO":
+		model = PPO(config, vec_env, device=device)
+	else:
+		raise ValueError(f"Invalid model: {config['model']['select_model']}")
 
 	model.learn(progress_bar=True)
+	run.finish()
