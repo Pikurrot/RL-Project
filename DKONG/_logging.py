@@ -77,6 +77,24 @@ class EvalVideoControlCallback(BaseCallback):
 		return True
 
 
+class CustomEvalCallback(EvalCallback):
+	def __init__(self, *args, run_before_training: bool = True, **kwargs):
+		super().__init__(*args, **kwargs)
+		self.run_before_training = run_before_training
+		self.run_before_training_done = False
+
+	def _on_training_start(self) -> None:
+		# run evaluation before training starts
+		super()._on_training_start()
+		if self.run_before_training and not self.run_before_training_done:
+			# temporarily fake n_calls so that _on_step executes once
+			prev_n_calls = self.n_calls
+			self.n_calls = self.eval_freq if self.eval_freq > 0 else 1
+			self._on_step()
+			self.n_calls = prev_n_calls
+			self.run_before_training_done = True
+
+
 def build_callbacks(config: dict, checkpoints_dir: Path) -> CallbackList:
 	eval_env = make_eval_vec_env(config)
 	save_freq = int(config["model"]["save_freq"])
@@ -93,7 +111,7 @@ def build_callbacks(config: dict, checkpoints_dir: Path) -> CallbackList:
 	best_dir = Path(checkpoints_dir) / "best"
 	log_path = Path(config["monitor_dir"]) / "eval"
 	
-	eval_cb = EvalCallback(
+	eval_cb = CustomEvalCallback(
 		eval_env=eval_env,
 		best_model_save_path=str(best_dir),
 		log_path=str(log_path),
