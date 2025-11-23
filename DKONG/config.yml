@@ -5,19 +5,20 @@ video_dir: ./videos/
 wandb:
   entity: paradigms-team
   project: DonkeyKong
-  run_name: ppo_baseline
+  run_name: ppo_basic_wrappers
   gradient_save_freq: 100
 
 env:
   env_id: ALE/DonkeyKong-v5
   n_envs: 9
   frame_stack: 4 # number of frames to stack
+  minimal_actions: [0, 1, 2, 3, 4, 6, 7, 11, 12]
 
 eval:
-  eval_freq: 50000 # save model every n steps
+  eval_freq: 50000 # eval and save model every n steps
   n_eval_episodes: 5
   video_every: 1 # record every n evaluations
-  video_length: 1000  # max frames to record
+  video_length: 2000  # max frames to record
 
 model:
   select_model: PPO
@@ -47,3 +48,7 @@ model:
     ent_coef: 0.01 # entropy coefficient for the loss calculation
     vf_coef: 0.5 # value function coefficient for the loss calculation
     total_timesteps: 1_000_000 # for training
+    policy_kwargs:
+      features_extractor_class: CustomCNN
+      features_extractor_kwargs:
+        features_dim: 128

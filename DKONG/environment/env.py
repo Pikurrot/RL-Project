@@ -7,6 +7,13 @@ from pathlib import Path
 from stable_baselines3.common.env_util import make_vec_env as sb3_make_vec_env
 from stable_baselines3.common.vec_env import VecFrameStack, VecVideoRecorder
 
+from .wrappers import (
+	MinimalActionSpace,
+	FireAtStart,
+	AddChannelDim,
+	ScaleObservation,
+)
+
 logger = logging.getLogger(__name__)
 gym.register_envs(ale_py)
 
@@ -16,6 +23,7 @@ class AsyncVecVideoRecorder(VecVideoRecorder):
 	def __init__(self, *args, **kwargs):
 		super().__init__(*args, **kwargs)
 		self._encode_threads: list[threading.Thread] = []
+		self._video_counter = 0
 
 	def _stop_recording(self) -> None:
 		# copy-paste from super source code, but using threading
@@ -31,7 +39,7 @@ class AsyncVecVideoRecorder(VecVideoRecorder):
 				from moviepy.video.io.ImageSequenceClip import ImageSequenceClip
 
 				clip = ImageSequenceClip(frames, fps=fps)
-				clip.write_videofile(video_path, verbose=False, logger=None, audio=False)
+				clip.write_videofile(video_path, logger=None, audio=False)
 
 			thread = threading.Thread(target=_encode, daemon=True)
 			thread.start()
@@ -39,6 +47,16 @@ class AsyncVecVideoRecorder(VecVideoRecorder):
 
 		self.recorded_frames = []
 		self.recording = False
+
+	def _start_video_recorder(self) -> None:
+		# give each video a unique prefix so repeated evaluations don't clobber files
+		original_prefix = self.name_prefix
+		self.name_prefix = f"{original_prefix}-{self._video_counter:04d}"
+		self._video_counter += 1
+		try:
+			super()._start_video_recorder()
+		finally:
+			self.name_prefix = original_prefix
 
 	def close(self) -> None:
 		# join all threads before closing
@@ -51,7 +69,11 @@ class AsyncVecVideoRecorder(VecVideoRecorder):
 def make_env(config: dict) -> gym.Env:
 	# Create a single env. This is shared by training and evaluation.
 	# TODO: Put wrappers here
-	env = gym.make(config["env"]["env_id"], render_mode="rgb_array")
+	env = gym.make(config["env"]["env_id"], render_mode="rgb_array", obs_type="grayscale")
+	env = FireAtStart(env)
+	env = MinimalActionSpace(env, config)
+	env = AddChannelDim(env)
+	env = ScaleObservation(env)
 	return env
 
 

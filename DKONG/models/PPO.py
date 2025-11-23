@@ -1,17 +1,20 @@
 from __future__ import annotations
 import torch
 import gymnasium as gym
-from stable_baselines3 import PPO as PPOsb3
 from pathlib import Path
+from stable_baselines3 import PPO as PPOsb3
 
 from _logging import build_callbacks
-from models.base import BaseModel
+from .base import BaseModel, CustomCNN
 
 
 class PPO(BaseModel, PPOsb3):
 	def __init__(self, config: dict, vec_env: gym.Env, device: torch.device = None):
 		BaseModel.__init__(self, config)
 		self.ppo_config = config["model"]["PPO"]
+		self.policy_kwargs = self.ppo_config["policy_kwargs"]
+		if self.policy_kwargs["features_extractor_class"] == "CustomCNN":
+			self.policy_kwargs["features_extractor_class"] = CustomCNN
 		PPOsb3.__init__(
 			self,
 			policy=self.ppo_config["policy"],
@@ -26,7 +29,8 @@ class PPO(BaseModel, PPOsb3):
 			vf_coef=self.ppo_config["vf_coef"],
 			tensorboard_log=str(Path(self.config["monitor_dir"]) / "tb"),
 			verbose=1,
-			device=device
+			device=device,
+			policy_kwargs=self.policy_kwargs
 		)
 		self.total_timesteps = self.ppo_config["total_timesteps"]
 
