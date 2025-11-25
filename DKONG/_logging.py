@@ -95,6 +95,26 @@ class CustomEvalCallback(EvalCallback):
 			self.run_before_training_done = True
 
 
+class GradientInspectionCallback(BaseCallback):
+	def __init__(self, verbose=0):
+		super(GradientInspectionCallback, self).__init__(verbose)
+
+	def _on_step(self) -> bool:
+		policy_net = self.model.policy
+
+		grad_norms = []
+		for name, param in policy_net.named_parameters():
+			if param.grad is not None:
+				grad_norm = param.grad.norm().item()
+				grad_norms.append(grad_norm)
+				self.logger.record(f"gradients/{name}_norm", grad_norm)
+		if grad_norms:
+			avg_grad_norm = sum(grad_norms) / len(grad_norms)
+			self.logger.record("gradients/avg_norm", avg_grad_norm)
+
+		return True
+
+
 def build_callbacks(config: dict, checkpoints_dir: Path) -> CallbackList:
 	eval_env = make_eval_vec_env(config)
 	save_freq = int(config["model"]["save_freq"])
@@ -127,7 +147,8 @@ def build_callbacks(config: dict, checkpoints_dir: Path) -> CallbackList:
 		model_save_freq=save_freq,
 		gradient_save_freq=int(config["wandb"]["gradient_save_freq"]),
 	)
-	return CallbackList([eval_cb, wandb_cb])
+	gradient_inspection_cb = GradientInspectionCallback(verbose=1)
+	return CallbackList([eval_cb, wandb_cb, gradient_inspection_cb])
 
 
 if __name__ == "__main__":

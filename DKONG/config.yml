@@ -5,7 +5,7 @@ video_dir: ./videos/
 wandb:
   entity: paradigms-team
   project: DonkeyKong
-  run_name: ppo_resize_and_death_penalty
+  run_name: ppo_death_penalty_100_big_cnn_20M
   gradient_save_freq: 100
 
 env:
@@ -13,8 +13,8 @@ env:
   n_envs: 9
   frame_stack: 4 # number of frames to stack
   minimal_actions: [0, 1, 2, 3, 4, 6, 7, 11, 12]
-  resize_observation: [84, 84]
-  death_penalty: -1.0
+  resize_observation: [128, 128]
+  death_penalty: -100
 
 eval:
   eval_freq: 100000 # eval and save model every n steps
@@ -49,8 +49,8 @@ model:
     clip_range: 0.1
     ent_coef: 0.01 # entropy coefficient for the loss calculation
     vf_coef: 0.5 # value function coefficient for the loss calculation
-    total_timesteps: 2_000_000 # for training
+    total_timesteps: 20_000_000 # for training
     policy_kwargs:
       features_extractor_class: CustomCNN
       features_extractor_kwargs:
-        features_dim: 128
+        features_dim: 256
