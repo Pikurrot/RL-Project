@@ -1,6 +1,8 @@
 from __future__ import annotations
 import gymnasium as gym
 import numpy as np
+import cv2
+from gymnasium.wrappers import ResizeObservation as GymResizeObservation
 
 
 # Reduce action space to only minimal actions
@@ -105,7 +107,7 @@ class AddChannelDim(gym.ObservationWrapper):
 		return np.expand_dims(observation, axis=0).astype(np.uint8) # (1, H, W)
 
 
-# Scale observation to [0, 1]
+# Scale observation to [0, 1] (must be after AddChannelDim)
 class ScaleObservation(gym.ObservationWrapper):
 	def __init__(self, env: gym.Env):
 		super().__init__(env)
@@ -113,3 +115,39 @@ class ScaleObservation(gym.ObservationWrapper):
 
 	def observation(self, observation: np.ndarray) -> np.ndarray:
 		return observation.astype(np.float32) / 255.0
+
+
+# Grayscale observation (must be before AddChannelDim)
+class GrayscaleObservation(gym.ObservationWrapper):
+	def __init__(self, env: gym.Env):
+		super().__init__(env)
+		shape = self.observation_space.shape
+		out_shape = (shape[0], shape[1])
+		self.observation_space = gym.spaces.Box(low=0, high=255, shape=out_shape, dtype=np.uint8)
+
+	def observation(self, observation: np.ndarray) -> np.ndarray: # (H, W, 3)
+		return cv2.cvtColor(observation, cv2.COLOR_RGB2GRAY) # (H, W)
+
+
+# Resize observation (must be before AddChannelDim)
+class ResizeObservation(GymResizeObservation):
+	def __init__(self, env: gym.Env, config: dict):
+		self.resize_observation = tuple(config["env"]["resize_observation"])
+		super().__init__(env, self.resize_observation)
+
+
+# Death penalty
+class DeathPenalty(gym.Wrapper):
+	def __init__(self, env: gym.Env, config: dict):
+		super().__init__(env)
+		self.death_penalty = config["env"]["death_penalty"]
+
+	def step(self, action: int):
+		obs, reward, terminated, truncated, info = self.env.step(action)
+		if info.get("fire_wrapper_forced_game_over", False):
+			reward += self.death_penalty
+
+		if terminated or truncated:
+			reward += self.death_penalty
+		
+		return obs, reward, terminated, truncated, info

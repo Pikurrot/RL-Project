@@ -12,6 +12,9 @@ from .wrappers import (
 	FireAtStart,
 	AddChannelDim,
 	ScaleObservation,
+	GrayscaleObservation,
+	ResizeObservation,
+	DeathPenalty,
 )
 
 logger = logging.getLogger(__name__)
@@ -69,9 +72,12 @@ class AsyncVecVideoRecorder(VecVideoRecorder):
 def make_env(config: dict) -> gym.Env:
 	# Create a single env. This is shared by training and evaluation.
 	# TODO: Put wrappers here
-	env = gym.make(config["env"]["env_id"], render_mode="rgb_array", obs_type="grayscale")
+	env = gym.make(config["env"]["env_id"], render_mode="rgb_array")
 	env = FireAtStart(env)
 	env = MinimalActionSpace(env, config)
+	env = DeathPenalty(env, config)
+	env = GrayscaleObservation(env)
+	env = ResizeObservation(env, config)
 	env = AddChannelDim(env)
 	env = ScaleObservation(env)
 	return env
