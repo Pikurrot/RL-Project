@@ -11,10 +11,15 @@ from environment.env import make_eval_vec_env
 
 DKONG_ROOT = Path(__file__).resolve().parents[0]
 CONFIG_PATH = DKONG_ROOT / "config.yml"
+PRETRAIN_CONFIG_PATH = DKONG_ROOT / "config_pretrain.yml"
 logger = logging.getLogger(__name__)
 
 def load_config() -> dict:
 	with open(CONFIG_PATH, "r") as f:
+		return yaml.safe_load(f)
+
+def load_pretrain_config() -> dict:
+	with open(PRETRAIN_CONFIG_PATH, "r") as f:
 		return yaml.safe_load(f)
 
 def init_wandb(config: dict) -> wandb.Run:

@@ -1,4 +1,5 @@
 checkpoints_dir: /data/users/elopez/checkpoints_dkong
+checkpoints_dir_pretrained: /data/users/elopez/checkpoints_dkong_pretrained
 monitor_dir: ./logs/
 video_dir: ./videos/
 

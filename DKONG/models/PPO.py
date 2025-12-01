@@ -13,8 +13,10 @@ class PPO(BaseModel, PPOsb3):
 		BaseModel.__init__(self, config)
 		self.ppo_config = config["model"]["PPO"]
 		self.policy_kwargs = self.ppo_config["policy_kwargs"]
-		if self.policy_kwargs["features_extractor_class"] == "CustomCNN":
+		class_name = self.policy_kwargs["features_extractor_class"]
+		if class_name == "CustomCNN":
 			self.policy_kwargs["features_extractor_class"] = CustomCNN
+			
 		PPOsb3.__init__(
 			self,
 			policy=self.ppo_config["policy"],
