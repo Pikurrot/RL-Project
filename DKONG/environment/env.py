@@ -93,7 +93,7 @@ def make_vec_env(
 		monitor_dir=config["monitor_dir"],
 	)
 	n_stack = config["env"]["frame_stack"]
-	venv = VecFrameStack(venv, n_stack=n_stack)
+	venv = VecFrameStack(venv, n_stack=n_stack, channels_order="first")
 	return venv
 
 
@@ -106,7 +106,11 @@ def make_eval_vec_env(
 		n_envs=1,
 		monitor_dir=config["monitor_dir"],
 	)
-	eval_env = VecFrameStack(eval_env, n_stack=config["env"]["frame_stack"])
+	eval_env = VecFrameStack(
+		eval_env,
+		n_stack=config["env"]["frame_stack"],
+		channels_order="first",
+	)
 
 	if config["video_dir"] is not None:
 		video_dir = _prepare_video_dir(config, suffix="eval")

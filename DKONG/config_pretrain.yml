@@ -11,5 +11,6 @@ pretrain:
   head_hidden_dim: 512
   log_interval: 500
   dataset_chunk_size: 2048
+  save_dataset: true
   action_repeat_steps: 4
   seed: 42

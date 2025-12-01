@@ -13,7 +13,7 @@ if HOSTNAME == "cudahpc16":
 import random
 from collections import deque
 from pathlib import Path
-from typing import Callable, Deque, List
+from typing import Callable, Deque, Dict, List
 
 import gymnasium as gym
 import numpy as np
@@ -94,6 +94,23 @@ def to_tensor(obs: np.ndarray, device: torch.device) -> torch.Tensor:
 	return torch.from_numpy(obs).unsqueeze(0).to(device=device, dtype=torch.float32)
 
 
+def save_transition_chunk(
+	chunk: List[Dict[str, np.ndarray]],
+	target_dir: Path,
+	chunk_idx: int,
+) -> None:
+	if not chunk:
+		return
+	target_dir.mkdir(parents=True, exist_ok=True)
+	data = {
+		"s_t": np.stack([entry["s_t"] for entry in chunk]),
+		"s_tp1": np.stack([entry["s_tp1"] for entry in chunk]),
+		"action": np.array([entry["action"] for entry in chunk], dtype=np.int64),
+	}
+	path = target_dir / f"chunk_{chunk_idx:05d}.npz"
+	np.savez_compressed(path, **data)
+
+
 def save_checkpoint(
 	step: int,
 	extractor: CustomCNN,
@@ -159,8 +176,18 @@ def main() -> None:
 	)
 	criterion = nn.CrossEntropyLoss()
 
-	checkpoint_dir = prepare_run_dir(Path(main_config["checkpoints_dir_pretrained"]), pretrain_config["wandb"]["run_name"])
+	run_dir = prepare_run_dir(Path(main_config["checkpoints_dir_pretrained"]), pretrain_config["wandb"]["run_name"])
+	checkpoint_dir = run_dir / "checkpoints"
+	checkpoint_dir.mkdir(parents=True, exist_ok=True)
+	save_dataset = bool(pre_cfg.get("save_dataset", True))
+	dataset_chunk_size = max(1, int(pre_cfg.get("dataset_chunk_size", 2048))) if save_dataset else 0
+	dataset_dir = None
+	if save_dataset:
+		dataset_dir = run_dir / "dataset"
+		dataset_dir.mkdir(parents=True, exist_ok=True)
 	print(f"[Pretrain] Saving checkpoints to: {checkpoint_dir}")
+	if dataset_dir is not None:
+		print(f"[Pretrain] Saving dataset chunks to: {dataset_dir}")
 	wandb_run = init_wandb(pretrain_config)
 
 	total_steps = int(pre_cfg["total_steps"])
@@ -174,6 +201,8 @@ def main() -> None:
 	running_samples = 0
 
 	stack: Deque[np.ndarray] = deque(maxlen=frame_stack)
+	dataset_chunk: List[Dict[str, np.ndarray]] = []
+	chunk_idx = 0
 	reset_kwargs = {}
 	if random_seed is not None:
 		reset_kwargs["seed"] = random_seed
@@ -229,6 +258,19 @@ def main() -> None:
 
 			next_stack = np.concatenate(next_frames, axis=0).astype(np.float32)
 
+			if dataset_dir is not None:
+				dataset_chunk.append(
+					{
+						"s_t": current_stack.copy(),
+						"s_tp1": next_stack.copy(),
+						"action": action_label,
+					}
+				)
+				if len(dataset_chunk) >= dataset_chunk_size:
+					save_transition_chunk(dataset_chunk, dataset_dir, chunk_idx)
+					chunk_idx += 1
+					dataset_chunk.clear()
+
 			# Training step
 			z_t = extractor(to_tensor(current_stack, device))
 			z_tp1 = extractor(to_tensor(next_stack, device))
@@ -275,7 +317,9 @@ def main() -> None:
 	except KeyboardInterrupt:
 		print("[Pretrain] Interrupted by user. Saving progress...")
 	finally:
-		# Flush final checkpoint
+		# Flush dataset and final checkpoint
+		if dataset_dir is not None and dataset_chunk:
+			save_transition_chunk(dataset_chunk, dataset_dir, chunk_idx)
 		save_checkpoint(step, extractor, head, optimizer, checkpoint_dir)
 		env.close()
 		if wandb_run is not None:
