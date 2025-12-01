@@ -6,7 +6,7 @@ video_dir: ./videos/
 wandb:
   entity: paradigms-team
   project: DonkeyKong
-  run_name: ppo_death_penalty_100_big_cnn_20M
+  run_name: ppo_pretrained_cnn
   gradient_save_freq: 100
 
 env:
@@ -55,3 +55,4 @@ model:
       features_extractor_class: CustomCNN
       features_extractor_kwargs:
         features_dim: 256
+        checkpoint_path: inverse_dynamics_v2_1/checkpoints/step_0100000.pt

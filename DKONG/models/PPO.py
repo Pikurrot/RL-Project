@@ -16,7 +16,12 @@ class PPO(BaseModel, PPOsb3):
 		class_name = self.policy_kwargs["features_extractor_class"]
 		if class_name == "CustomCNN":
 			self.policy_kwargs["features_extractor_class"] = CustomCNN
-			
+			checkpoint_path = self.policy_kwargs["features_extractor_kwargs"]["checkpoint_path"]
+			if checkpoint_path is not None:
+				checkpoints_dir_pretrained = Path(config["checkpoints_dir_pretrained"])
+				checkpoint_path = checkpoints_dir_pretrained / checkpoint_path
+				self.policy_kwargs["features_extractor_kwargs"]["checkpoint_path"] = str(checkpoint_path)
+
 		PPOsb3.__init__(
 			self,
 			policy=self.ppo_config["policy"],

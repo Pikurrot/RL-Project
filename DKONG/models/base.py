@@ -24,7 +24,8 @@ class CustomCNN(BaseFeaturesExtractor):
 	def __init__(
 		self,
 		observation_space: gym.spaces.Box,
-		features_dim: int = 128
+		features_dim: int = 128,
+		checkpoint_path: str = None,
 	):
 		super().__init__(observation_space, features_dim)
 		# We assume CxHxW images (channels first)
@@ -48,6 +49,17 @@ class CustomCNN(BaseFeaturesExtractor):
 				torch.as_tensor(observation_space.sample()[None]).float()
 			).shape[1]
 		self.linear = nn.Sequential(nn.Linear(n_flatten, features_dim), nn.ReLU())
+
+		if checkpoint_path is not None:
+			print(f"Loading checkpoint from: {checkpoint_path}")
+			device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+			ckpt = torch.load(checkpoint_path, map_location=device)
+			state = ckpt.get("extractor_state_dict", ckpt)
+			missing, unexpected = self.load_state_dict(state, strict=False)
+			if missing:
+				print(f"Missing keys: {missing}")
+			if unexpected:
+				print(f"Unexpected keys: {unexpected}")
 
 	def forward(self, observations: torch.Tensor) -> torch.Tensor:
 		return self.linear(self.cnn(observations))
