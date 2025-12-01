@@ -16,6 +16,7 @@ env:
   minimal_actions: [0, 1, 2, 3, 4, 6, 7, 11, 12]
   resize_observation: [128, 128]
   death_penalty: -100
+  ladder_reward: 1
 
 eval:
   eval_freq: 100000 # eval and save model every n steps

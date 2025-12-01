@@ -76,8 +76,8 @@ def make_env(config: dict) -> gym.Env:
 	env = FireAtStart(env)
 	env = MinimalActionSpace(env, config)
 	env = DeathPenalty(env, config)
-	env = GrayscaleObservation(env)
 	env = ResizeObservation(env, config)
+	env = GrayscaleObservation(env)
 	env = AddChannelDim(env)
 	env = ScaleObservation(env)
 	return env

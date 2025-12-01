@@ -151,3 +151,14 @@ class DeathPenalty(gym.Wrapper):
 			reward += self.death_penalty
 		
 		return obs, reward, terminated, truncated, info
+
+
+# Reward for climbing a ladder
+class LadderClimbReward(gym.Wrapper):
+	def __init__(self, env: gym.Env, config: dict):
+		super().__init__(env)
+		self.ladder_reward = config["env"]["ladder_reward"]
+
+	def step(self, action: int):
+		obs, reward, terminated, truncated, info = self.env.step(action)
+		return obs, reward, terminated, truncated, info
