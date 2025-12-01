@@ -15,6 +15,7 @@ from .wrappers import (
 	GrayscaleObservation,
 	ResizeObservation,
 	DeathPenalty,
+	LadderClimbReward,
 )
 
 logger = logging.getLogger(__name__)
@@ -77,6 +78,7 @@ def make_env(config: dict) -> gym.Env:
 	env = MinimalActionSpace(env, config)
 	env = DeathPenalty(env, config)
 	env = ResizeObservation(env, config)
+	env = LadderClimbReward(env, config)
 	env = GrayscaleObservation(env)
 	env = AddChannelDim(env)
 	env = ScaleObservation(env)

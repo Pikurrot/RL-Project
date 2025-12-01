@@ -154,7 +154,7 @@ class DeathPenalty(gym.Wrapper):
 
 
 # Reward for climbing a ladder
-class LadderClimbReward(gym.ObservationWrapper, gym.Wrapper):
+class LadderClimbReward(gym.Wrapper):
 	def __init__(self, env: gym.Env, config: dict):
 		super().__init__(env)
 		self.ladder_reward = config["env"]["ladder_reward"]
@@ -179,5 +179,7 @@ class LadderClimbReward(gym.ObservationWrapper, gym.Wrapper):
 				y = self.mario_position(obs)
 				if y < y_prev:
 					reward += self.ladder_reward
+		else:
+			obs, reward, terminated, truncated, info = self.env.step(action)
 
 		return obs, reward, terminated, truncated, info

@@ -6,7 +6,7 @@ video_dir: ./videos/
 wandb:
   entity: paradigms-team
   project: DonkeyKong
-  run_name: ppo_pretrained_cnn
+  run_name: ppo_ladder_climb_reward
   gradient_save_freq: 100
 
 env:
@@ -16,7 +16,7 @@ env:
   minimal_actions: [0, 1, 2, 3, 4, 6, 7, 11, 12]
   resize_observation: [128, 128]
   death_penalty: -100
-  ladder_reward: 1
+  ladder_reward: 20 # for each pixel climbed
 
 eval:
   eval_freq: 100000 # eval and save model every n steps
