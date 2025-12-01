@@ -154,11 +154,30 @@ class DeathPenalty(gym.Wrapper):
 
 
 # Reward for climbing a ladder
-class LadderClimbReward(gym.Wrapper):
+class LadderClimbReward(gym.ObservationWrapper, gym.Wrapper):
 	def __init__(self, env: gym.Env, config: dict):
 		super().__init__(env)
 		self.ladder_reward = config["env"]["ladder_reward"]
+		self.prev_obs = None
+
+	def mario_position(self, obs):
+		redness = obs[:, :, 0].astype(np.int16) - np.maximum(obs[:, :, 1], obs[:, :, 2]).astype(np.int16)
+		# Find the pixel(s) with the maximum redness
+		max_redness = np.max(redness)
+		most_reddish = (redness == max_redness)
+		center_of_mass = np.argwhere(most_reddish)
+		center_of_mass = np.mean(center_of_mass, axis=0)
+		return center_of_mass[1]
 
 	def step(self, action: int):
-		obs, reward, terminated, truncated, info = self.env.step(action)
+		if self.prev_obs:
+			y_prev = self.mario_position(self.prev_obs)
+			
+			obs, reward, terminated, truncated, info = self.env.step(action)
+			self.prev_obs = obs
+			if action == 2:
+				y = self.mario_position(obs)
+				if y < y_prev:
+					reward += self.ladder_reward
+
 		return obs, reward, terminated, truncated, info
