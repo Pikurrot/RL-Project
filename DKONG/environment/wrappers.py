@@ -153,33 +153,78 @@ class DeathPenalty(gym.Wrapper):
 		return obs, reward, terminated, truncated, info
 
 
-# Reward for climbing a ladder
+def mario_position(obs):
+	redness = obs[:, :, 0].astype(np.int16) - np.maximum(obs[:, :, 1], obs[:, :, 2]).astype(np.int16)
+	max_redness = np.max(redness)
+	most_reddish = (redness == max_redness)
+	kernel = np.ones((2, 2), np.uint8)
+	most_reddish = cv2.morphologyEx(most_reddish.astype(np.uint8), cv2.MORPH_OPEN, kernel)
+	center_of_mass = np.argwhere(most_reddish)
+	center_of_mass = np.mean(center_of_mass, axis=0)
+	return center_of_mass
+
+def distance_to_ladders(mario_pos):
+	def get_level(center_of_mass):
+		levels_height = [25, 25, 35, 25, 25, 25, 25]
+		levels_y_lst = [170, 145, 110, 85, 60, 35, 10]
+		for i, y in enumerate(levels_y_lst):
+			if center_of_mass[0] > y:
+				return i
+		# if reaches here, probably mario is not in the obs (when died)
+		return 0
+	
+	def get_ladders_from_level(level):
+		ladders_x_coords = [[110], [50, 83], [110], [50, 71], [110], [34, 79], []]
+		return ladders_x_coords[level]
+
+	def get_distance_to_ladders(center_of_mass, ladders_x_coords):
+		distance = []
+		for ladder in ladders_x_coords:
+			distance.append(abs(center_of_mass[1] - ladder))
+		return distance
+	
+	level = get_level(mario_pos)
+	ladders_x_coords = get_ladders_from_level(level)
+	distance = get_distance_to_ladders(mario_pos, ladders_x_coords)
+	return distance
+
+
+# Reward for climbing a ladder (must be before ResizeObservation)
 class LadderClimbReward(gym.Wrapper):
 	def __init__(self, env: gym.Env, config: dict):
 		super().__init__(env)
 		self.ladder_reward = config["env"]["ladder_reward"]
 		self.prev_obs = None
 
-	def mario_position(self, obs):
-		redness = obs[:, :, 0].astype(np.int16) - np.maximum(obs[:, :, 1], obs[:, :, 2]).astype(np.int16)
-		# Find the pixel(s) with the maximum redness
-		max_redness = np.max(redness)
-		most_reddish = (redness == max_redness)
-		center_of_mass = np.argwhere(most_reddish)
-		center_of_mass = np.mean(center_of_mass, axis=0)
-		return center_of_mass[1]
-
 	def step(self, action: int):
 		if self.prev_obs:
-			y_prev = self.mario_position(self.prev_obs)
+			y_prev = mario_position(self.prev_obs)[0]
 			
 			obs, reward, terminated, truncated, info = self.env.step(action)
 			self.prev_obs = obs
 			if action == 2:
-				y = self.mario_position(obs)
+				y = mario_position(obs)[0]
 				if y < y_prev:
 					reward += self.ladder_reward
 		else:
 			obs, reward, terminated, truncated, info = self.env.step(action)
 
+		return obs, reward, terminated, truncated, info
+
+
+# Penalty for distance to ladders (must be after ResizeObservation)
+class DistanceToLaddersPenalty(gym.Wrapper):
+	def __init__(self, env: gym.Env, config: dict):
+		super().__init__(env)
+		self.distance_to_ladders_penalty = config["env"]["distance_to_ladders_penalty"]
+
+	def step(self, action: int):
+		obs, reward, terminated, truncated, info = self.env.step(action)
+		mario_pos = mario_position(obs)
+		distance = distance_to_ladders(mario_pos)
+		if np.isnan(np.min(distance)):
+			distance = 0
+		else:
+			distance = np.min(distance)
+		reward += self.distance_to_ladders_penalty * distance
 		return obs, reward, terminated, truncated, info

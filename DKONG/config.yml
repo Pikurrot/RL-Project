@@ -6,17 +6,18 @@ video_dir: ./videos/
 wandb:
   entity: paradigms-team
   project: DonkeyKong
-  run_name: ppo_ladder_climb_reward
+  run_name: ppo_ladder_distance_penalty
   gradient_save_freq: 100
 
 env:
   env_id: ALE/DonkeyKong-v5
   n_envs: 9
   frame_stack: 4 # number of frames to stack
-  minimal_actions: [0, 1, 2, 3, 4, 6, 7, 11, 12]
+  minimal_actions: [0, 1, 2, 3, 4, 11, 12]
   resize_observation: [128, 128]
   death_penalty: -100
-  ladder_reward: 20 # for each pixel climbed
+  ladder_reward: 100 # for each pixel climbed
+  distance_to_ladders_penalty: -0.01 # for each pixel away from ladders
 
 eval:
   eval_freq: 100000 # eval and save model every n steps
