@@ -208,7 +208,7 @@ def main() -> None:
 		reset_kwargs["seed"] = random_seed
 
 	action_repeat_steps = max(1, int(pre_cfg.get("action_repeat_steps", frame_stack)))
-	minimal_actions = main_config["env"]["minimal_actions"]
+	minimal_actions = main_config["env"]["wrappers"]["minimal_action_space"]["minimal_actions"]
 	action_lookup = {value: idx for idx, value in enumerate(minimal_actions)}
 	current_action_idx = 0
 	action_repeat_remaining = 0

@@ -6,7 +6,7 @@ HOSTNAME = socket.gethostname()
 if HOSTNAME == "cudahpc16":
 	# idk who set up this cluster but without this the gpu is not detected
 	os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-	os.environ["CUDA_VISIBLE_DEVICES"] = "7"
+	os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 	os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 import torch

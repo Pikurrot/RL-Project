@@ -70,7 +70,7 @@ def build_models(device: torch.device) -> tuple[CustomCNN, InverseDynamicsHead, 
 	main_config = load_config()
 	pretrain_config = load_pretrain_config()
 	frame_stack = int(main_config["env"]["frame_stack"])
-	resize_h, resize_w = main_config["env"]["resize_observation"]
+	resize_h, resize_w = main_config["env"]["wrappers"]["resize_observation"]["size"]
 	c = 1  # after Grayscale + AddChannelDim
 	obs_space = gym.spaces.Box(low=0, high=1, shape=(frame_stack * c, resize_h, resize_w), dtype=np.float32)
 
@@ -79,7 +79,7 @@ def build_models(device: torch.device) -> tuple[CustomCNN, InverseDynamicsHead, 
 	)
 	extractor = CustomCNN(obs_space, features_dim=features_dim).to(device)
 
-	n_actions = len(main_config["env"]["minimal_actions"])
+	n_actions = len(main_config["env"]["wrappers"]["minimal_action_space"]["minimal_actions"])
 	head_hidden_dim = int(pretrain_config["pretrain"].get("head_hidden_dim", 512))
 	head = InverseDynamicsHead(features_dim * 2, head_hidden_dim, n_actions).to(device)
 	return extractor, head, n_actions
