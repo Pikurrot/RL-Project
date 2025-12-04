@@ -197,7 +197,7 @@ class LadderClimbReward(gym.Wrapper):
 		self.prev_obs = None
 
 	def step(self, action: int):
-		if self.prev_obs:
+		if self.prev_obs is not None:
 			y_prev = mario_position(self.prev_obs)[0]
 			
 			obs, reward, terminated, truncated, info = self.env.step(action)
@@ -208,6 +208,7 @@ class LadderClimbReward(gym.Wrapper):
 					reward += self.ladder_reward
 		else:
 			obs, reward, terminated, truncated, info = self.env.step(action)
+			self.prev_obs = obs
 
 		return obs, reward, terminated, truncated, info
 
