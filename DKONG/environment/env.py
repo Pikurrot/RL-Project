@@ -17,6 +17,8 @@ from .wrappers import (
 	DeathPenalty,
 	LadderClimbReward,
 	DistanceToLaddersPenalty,
+	LadderDistancePotential,
+	LadderAlignmentBonus,
 )
 
 logger = logging.getLogger(__name__)
@@ -73,17 +75,45 @@ class AsyncVecVideoRecorder(VecVideoRecorder):
 
 def make_env(config: dict) -> gym.Env:
 	# Create a single env. This is shared by training and evaluation.
-	# TODO: Put wrappers here
 	env = gym.make(config["env"]["env_id"], render_mode="rgb_array")
-	env = FireAtStart(env)
-	env = MinimalActionSpace(env, config)
-	env = DeathPenalty(env, config)
-	env = LadderClimbReward(env, config)
-	env = DistanceToLaddersPenalty(env, config)
-	env = ResizeObservation(env, config)
-	env = GrayscaleObservation(env)
-	env = AddChannelDim(env)
-	env = ScaleObservation(env)
+
+	wrappers_cfg = config["env"]["wrappers"]
+
+	def _enabled(name: str) -> bool:
+		val = wrappers_cfg[name]
+		if isinstance(val, dict):
+			return val["enabled"]
+		return bool(val)
+
+	if _enabled("fire_at_start"):
+		env = FireAtStart(env)
+
+	if _enabled("minimal_action_space"):
+		env = MinimalActionSpace(env, config)
+
+	if _enabled("death_penalty"):
+		env = DeathPenalty(env, config)
+
+	if _enabled("ladder_climb_reward"):
+		env = LadderClimbReward(env, config)
+
+	if _enabled("ladder_alignment_bonus"):
+		env = LadderAlignmentBonus(env, config)
+
+	if _enabled("ladder_distance_potential"):
+		env = LadderDistancePotential(env, config)
+
+	if _enabled("ladder_distance_penalty"):
+		env = DistanceToLaddersPenalty(env, config)
+
+	if _enabled("resize_observation"):
+		env = ResizeObservation(env, config)
+	if _enabled("grayscale_observation"):
+		env = GrayscaleObservation(env)
+	if _enabled("add_channel_dim"):
+		env = AddChannelDim(env)
+	if _enabled("scale_observation"):
+		env = ScaleObservation(env)
 	return env
 
 

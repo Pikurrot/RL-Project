@@ -4,12 +4,18 @@ import numpy as np
 import cv2
 from gymnasium.wrappers import ResizeObservation as GymResizeObservation
 
+from schedulers import build_step_schedule
+
 
 # Reduce action space to only minimal actions
 class MinimalActionSpace(gym.ActionWrapper):
 	def __init__(self, env: gym.Env, config: dict):
 		super().__init__(env)
-		self.minimal_actions = config["env"]["minimal_actions"]
+		wcfg = config["env"]["wrappers"]["minimal_action_space"]
+		if isinstance(wcfg, dict) and "minimal_actions" in wcfg:
+			self.minimal_actions = wcfg["minimal_actions"]
+		else:
+			self.minimal_actions = config["env"]["wrappers"]["minimal_action_space"]
 		self.action_space = gym.spaces.Discrete(len(self.minimal_actions))
 
 	def action(self, action: int) -> int:
@@ -132,7 +138,8 @@ class GrayscaleObservation(gym.ObservationWrapper):
 # Resize observation (must be before AddChannelDim)
 class ResizeObservation(GymResizeObservation):
 	def __init__(self, env: gym.Env, config: dict):
-		self.resize_observation = tuple(config["env"]["resize_observation"])
+		wcfg = config["env"]["wrappers"]["resize_observation"]
+		self.resize_observation = tuple(wcfg["size"]) if isinstance(wcfg, dict) else tuple(wcfg)
 		super().__init__(env, self.resize_observation)
 
 
@@ -140,7 +147,8 @@ class ResizeObservation(GymResizeObservation):
 class DeathPenalty(gym.Wrapper):
 	def __init__(self, env: gym.Env, config: dict):
 		super().__init__(env)
-		self.death_penalty = config["env"]["death_penalty"]
+		my_config = config["env"]["wrappers"]["death_penalty"]
+		self.death_penalty = my_config["value"] if isinstance(my_config, dict) else my_config
 
 	def step(self, action: int):
 		obs, reward, terminated, truncated, info = self.env.step(action)
@@ -160,6 +168,8 @@ def mario_position(obs):
 	kernel = np.ones((2, 2), np.uint8)
 	most_reddish = cv2.morphologyEx(most_reddish.astype(np.uint8), cv2.MORPH_OPEN, kernel)
 	center_of_mass = np.argwhere(most_reddish)
+	if center_of_mass.size == 0:
+		return np.array([np.nan, np.nan])
 	center_of_mass = np.mean(center_of_mass, axis=0)
 	return center_of_mass
 
@@ -178,6 +188,8 @@ def distance_to_ladders(mario_pos):
 		return ladders_x_coords[level]
 
 	def get_distance_to_ladders(center_of_mass, ladders_x_coords):
+		if len(ladders_x_coords) == 0:
+			return [np.nan]
 		distance = []
 		for ladder in ladders_x_coords:
 			distance.append(abs(center_of_mass[1] - ladder))
@@ -193,39 +205,139 @@ def distance_to_ladders(mario_pos):
 class LadderClimbReward(gym.Wrapper):
 	def __init__(self, env: gym.Env, config: dict):
 		super().__init__(env)
-		self.ladder_reward = config["env"]["ladder_reward"]
+		my_config = config["env"]["wrappers"]["ladder_climb_reward"]
+		self.reward_per_pixel = my_config["reward_per_pixel"]
+		self.require_up_action = my_config["require_up_action"]
+		self.max_bonus = my_config["max_bonus"]
 		self.prev_obs = None
 
-	def step(self, action: int):
-		if self.prev_obs is not None:
-			y_prev = mario_position(self.prev_obs)[0]
-			
-			obs, reward, terminated, truncated, info = self.env.step(action)
-			self.prev_obs = obs
-			if action == 2:
-				y = mario_position(obs)[0]
-				if y < y_prev:
-					reward += self.ladder_reward
-		else:
-			obs, reward, terminated, truncated, info = self.env.step(action)
-			self.prev_obs = obs
+	def reset(self, **kwargs):
+		obs, info = self.env.reset(**kwargs)
+		self.prev_obs = obs
+		return obs, info
 
+	def step(self, action: int):
+		if self.prev_obs is None:
+			self.prev_obs, _ = self.env.reset()
+
+		y_prev = mario_position(self.prev_obs)[0]
+		obs, reward, terminated, truncated, info = self.env.step(action)
+		y = mario_position(obs)[0]
+
+		valid_action = (not self.require_up_action) or (action == 2)
+		if not np.isnan(y_prev) and not np.isnan(y) and valid_action:
+			pixel_gain = max(0.0, y_prev - y)
+			bonus = self.reward_per_pixel * pixel_gain
+			if self.max_bonus is not None:
+				bonus = np.clip(bonus, None, self.max_bonus)
+			reward += bonus
+
+		self.prev_obs = obs
 		return obs, reward, terminated, truncated, info
 
 
-# Penalty for distance to ladders (must be after ResizeObservation)
+# Penalty for distance to ladders (kept for compatibility; supports scheduling)
 class DistanceToLaddersPenalty(gym.Wrapper):
 	def __init__(self, env: gym.Env, config: dict):
 		super().__init__(env)
-		self.distance_to_ladders_penalty = config["env"]["distance_to_ladders_penalty"]
+		my_config = config["env"]["wrappers"]["ladder_distance_penalty"]
+		self.per_pixel_penalty = my_config["per_pixel_penalty"]
+		schedule_cfg = my_config["schedule"] if isinstance(my_config, dict) and "schedule" in my_config else None
+		self.schedule = build_step_schedule(schedule_cfg)
+		self.step_count = 0
+
+	def reset(self, **kwargs):
+		self.step_count = 0
+		return self.env.reset(**kwargs)
 
 	def step(self, action: int):
 		obs, reward, terminated, truncated, info = self.env.step(action)
 		mario_pos = mario_position(obs)
-		distance = distance_to_ladders(mario_pos)
+		distance = distance_to_ladders(mario_pos) or [0]
 		if np.isnan(np.min(distance)):
 			distance = 0
 		else:
 			distance = np.min(distance)
-		reward += self.distance_to_ladders_penalty * distance
+		scale = self.per_pixel_penalty
+		if self.schedule is not None:
+			scale = self.schedule.value(self.step_count)
+		reward += scale * distance
+		self.step_count += 1
+		return obs, reward, terminated, truncated, info
+
+
+class LadderDistancePotential(gym.Wrapper):
+	"""
+	Potential-based shaping: reward += scale * (gamma * Phi(s') - Phi(s)),
+	where Phi(s) = -min ladder distance on current level.
+	"""
+	def __init__(self, env: gym.Env, config: dict):
+		super().__init__(env)
+		my_config = config["env"]["wrappers"]["ladder_distance_potential"]
+		self.gamma = config["model"]["PPO"]["gamma"]
+		self.base_scale = my_config["scale"]
+		schedule_cfg = my_config["schedule"] if isinstance(my_config, dict) and "schedule" in my_config else None
+		self.schedule = build_step_schedule(schedule_cfg)
+		self.prev_potential = None
+		self.step_count = 0
+
+	def reset(self, **kwargs):
+		obs, info = self.env.reset(**kwargs)
+		self.prev_potential = self._potential(obs)
+		self.step_count = 0
+		return obs, info
+
+	def step(self, action: int):
+		obs, reward, terminated, truncated, info = self.env.step(action)
+		potential = self._potential(obs)
+		scale = self.base_scale
+		if self.schedule is not None:
+			scale = self.schedule.value(self.step_count)
+		if self.prev_potential is not None and not np.isnan(self.prev_potential) and not np.isnan(potential):
+			shaping = scale * (self.gamma * potential - self.prev_potential)
+			reward += shaping
+		self.prev_potential = potential
+		self.step_count += 1
+		return obs, reward, terminated, truncated, info
+
+	def _potential(self, obs) -> float:
+		mario_pos = mario_position(obs)
+		distances = distance_to_ladders(mario_pos)
+		min_distance = np.nanmin(distances)
+		if np.isnan(min_distance):
+			return 0.0
+		return -min_distance
+
+
+class LadderAlignmentBonus(gym.Wrapper):
+	"""
+	One-time bonuses when Mario aligns with a ladder and attempts to climb.
+	"""
+	def __init__(self, env: gym.Env, config: dict):
+		super().__init__(env)
+		my_config = config["env"]["wrappers"]["ladder_alignment_bonus"]
+		self.bonus = my_config["bonus"]
+		self.x_tolerance = my_config["x_tolerance"]
+		self.cooldown_steps = my_config["cooldown_steps"]
+		self.cooldown = 0
+
+	def reset(self, **kwargs):
+		self.cooldown = 0
+		return self.env.reset(**kwargs)
+
+	def step(self, action: int):
+		obs, reward, terminated, truncated, info = self.env.step(action)
+		if self.cooldown > 0:
+			self.cooldown -= 1
+			return obs, reward, terminated, truncated, info
+
+		mario_pos = mario_position(obs)
+		distances = distance_to_ladders(mario_pos)
+		if np.isnan(np.min(distances)):
+			return obs, reward, terminated, truncated, info
+
+		if np.min(distances) <= self.x_tolerance and action == 2:  # aligned and pressing UP
+			reward += self.bonus
+			self.cooldown = self.cooldown_steps
+
 		return obs, reward, terminated, truncated, info
