@@ -19,6 +19,7 @@ from .wrappers import (
 	DistanceToLaddersPenalty,
 	LadderDistancePotential,
 	LadderAlignmentBonus,
+	BarrelRewardCancellation,
 )
 
 logger = logging.getLogger(__name__)
@@ -93,6 +94,9 @@ def make_env(config: dict) -> gym.Env:
 
 	if _enabled("death_penalty"):
 		env = DeathPenalty(env, config)
+
+	if _enabled("barrel_reward_cancellation"):
+		env = BarrelRewardCancellation(env, config)
 
 	if _enabled("ladder_climb_reward"):
 		env = LadderClimbReward(env, config)

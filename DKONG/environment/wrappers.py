@@ -11,9 +11,9 @@ from schedulers import build_step_schedule
 class MinimalActionSpace(gym.ActionWrapper):
 	def __init__(self, env: gym.Env, config: dict):
 		super().__init__(env)
-		wcfg = config["env"]["wrappers"]["minimal_action_space"]
-		if isinstance(wcfg, dict) and "minimal_actions" in wcfg:
-			self.minimal_actions = wcfg["minimal_actions"]
+		my_config = config["env"]["wrappers"]["minimal_action_space"]
+		if isinstance(my_config, dict) and "minimal_actions" in my_config:
+			self.minimal_actions = my_config["minimal_actions"]
 		else:
 			self.minimal_actions = config["env"]["wrappers"]["minimal_action_space"]
 		self.action_space = gym.spaces.Discrete(len(self.minimal_actions))
@@ -138,8 +138,8 @@ class GrayscaleObservation(gym.ObservationWrapper):
 # Resize observation (must be before AddChannelDim)
 class ResizeObservation(GymResizeObservation):
 	def __init__(self, env: gym.Env, config: dict):
-		wcfg = config["env"]["wrappers"]["resize_observation"]
-		self.resize_observation = tuple(wcfg["size"]) if isinstance(wcfg, dict) else tuple(wcfg)
+		my_config = config["env"]["wrappers"]["resize_observation"]
+		self.resize_observation = tuple(my_config["size"]) if isinstance(my_config, dict) else tuple(my_config)
 		super().__init__(env, self.resize_observation)
 
 
@@ -236,7 +236,7 @@ class LadderClimbReward(gym.Wrapper):
 		return obs, reward, terminated, truncated, info
 
 
-# Penalty for distance to ladders (kept for compatibility; supports scheduling)
+# Penalty for distance to ladders
 class DistanceToLaddersPenalty(gym.Wrapper):
 	def __init__(self, env: gym.Env, config: dict):
 		super().__init__(env)
@@ -266,6 +266,7 @@ class DistanceToLaddersPenalty(gym.Wrapper):
 		return obs, reward, terminated, truncated, info
 
 
+# Reward for distance to ladders V2 (potential-based shaping)
 class LadderDistancePotential(gym.Wrapper):
 	"""
 	Potential-based shaping: reward += scale * (gamma * Phi(s') - Phi(s)),
@@ -340,4 +341,15 @@ class LadderAlignmentBonus(gym.Wrapper):
 			reward += self.bonus
 			self.cooldown = self.cooldown_steps
 
+		return obs, reward, terminated, truncated, info
+
+
+class BarrelRewardCancellation(gym.Wrapper):
+	def __init__(self, env: gym.Env, config: dict):
+		super().__init__(env)
+
+	def step(self, action: int):
+		obs, reward, terminated, truncated, info = self.env.step(action)
+		if reward == 100:
+			reward = 0
 		return obs, reward, terminated, truncated, info
