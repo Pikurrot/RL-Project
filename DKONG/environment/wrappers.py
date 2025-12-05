@@ -173,16 +173,16 @@ def mario_position(obs):
 	center_of_mass = np.mean(center_of_mass, axis=0)
 	return center_of_mass
 
+def get_level(center_of_mass):
+	levels_height = [25, 25, 35, 25, 25, 25, 25]
+	levels_y_lst = [170, 145, 110, 85, 60, 35, 10]
+	for i, y in enumerate(levels_y_lst):
+		if center_of_mass[0] > y:
+			return i
+	# if reaches here, probably mario is not in the obs (when died)
+	return 0
+
 def distance_to_ladders(mario_pos):
-	def get_level(center_of_mass):
-		levels_height = [25, 25, 35, 25, 25, 25, 25]
-		levels_y_lst = [170, 145, 110, 85, 60, 35, 10]
-		for i, y in enumerate(levels_y_lst):
-			if center_of_mass[0] > y:
-				return i
-		# if reaches here, probably mario is not in the obs (when died)
-		return 0
-	
 	def get_ladders_from_level(level):
 		ladders_x_coords = [[110], [50, 83], [110], [50, 71], [110], [34, 79], []]
 		return ladders_x_coords[level]
@@ -344,12 +344,36 @@ class LadderAlignmentBonus(gym.Wrapper):
 		return obs, reward, terminated, truncated, info
 
 
+# Cancel Barrel Rewards, except for certain levels allow N barrel rewards
 class BarrelRewardCancellation(gym.Wrapper):
 	def __init__(self, env: gym.Env, config: dict):
 		super().__init__(env)
+		my_config = config["env"]["wrappers"]["barrel_reward_cancellation"]
+		self.except_for_levels = my_config["except_for_levels"]
+		self.exception_allow_count = my_config["exception_allow_count"]
+		self.exception_count = 0
+		self.prev_level = None
+
+	def reset(self, **kwargs):
+		self.exception_count = 0
+		self.prev_level = None
+		return self.env.reset(**kwargs)
 
 	def step(self, action: int):
 		obs, reward, terminated, truncated, info = self.env.step(action)
-		if reward == 100:
-			reward = 0
+		level = get_level(mario_position(obs))
+		if self.prev_level is not None and self.prev_level < level:
+			# reset exception count if level has increased
+			self.exception_count = 0
+		self.prev_level = level
+		if level not in self.except_for_levels:
+			# Cancel barrel reward always if level is NOT in exceptions
+			if reward == 100:
+				reward = 0
+		else:
+			if reward == 100:
+				self.exception_count += 1
+				if self.exception_count > self.exception_allow_count:
+					# cancel reward if exception_count barrels have already given reward on this level
+					reward = 0
 		return obs, reward, terminated, truncated, info

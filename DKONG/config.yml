@@ -6,7 +6,7 @@ video_dir: ./videos/
 wandb:
   entity: paradigms-team
   project: DonkeyKong
-  run_name: ppo_exp_barrel_reward_cancellation_no_death_penalty
+  run_name: ppo_exp_barrel_reward_cancellation_allow_34_1_no_death_penalty
   gradient_save_freq: 100
 
 env:
@@ -21,7 +21,10 @@ env:
     death_penalty:
       enabled: false
       value: -100
-    barrel_reward_cancellation: true
+    barrel_reward_cancellation:
+      enabled: true
+      except_for_levels: [3, 4]
+      exception_allow_count: 1 # allow only 1 barrel giving reward on these levels
     ladder_climb_reward:
       enabled: true
       reward_per_pixel: 2.0
