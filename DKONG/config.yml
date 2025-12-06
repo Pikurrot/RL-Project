@@ -6,7 +6,7 @@ video_dir: ./videos/
 wandb:
   entity: paradigms-team
   project: DonkeyKong
-  run_name: ppo_exp_barrel_reward_cancellation_allow_34_1_no_death_penalty
+  run_name: ppo_exp_barrel_reward_cancellation_no_death_penalty_allow_34_1
   gradient_save_freq: 100
 
 env:
@@ -19,8 +19,9 @@ env:
       enabled: true
       minimal_actions: [0, 1, 2, 3, 4, 11, 12]
     death_penalty:
-      enabled: false
+      enabled: true
       value: -100
+      allow_for_levels: [3, 4]
     barrel_reward_cancellation:
       enabled: true
       except_for_levels: [3, 4]
@@ -28,7 +29,6 @@ env:
     ladder_climb_reward:
       enabled: true
       reward_per_pixel: 2.0
-      require_up_action: true
       max_bonus: 100
     ladder_alignment_bonus:
       enabled: false
@@ -46,7 +46,7 @@ env:
     ladder_distance_penalty:
       enabled: true
       per_pixel_penalty: -0.005
-      schedule:
+      schedule: null
         # type: linear
         # start: 0.0
         # end: -0.01

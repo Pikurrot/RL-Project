@@ -23,6 +23,9 @@ class MinimalActionSpace(gym.ActionWrapper):
 
 
 # Automatically press FIRE whenever a new life begins so gameplay resumes
+# This is because the game pauses when:
+# 1) The game begins
+# 2) The screen resets (when a life is lost)
 class FireAtStart(gym.Wrapper):
 	def __init__(self, env: gym.Env):
 		super().__init__(env)
@@ -38,11 +41,11 @@ class FireAtStart(gym.Wrapper):
 		obs, info = self.env.reset(**kwargs)
 		self._lives = self._extract_lives(info)
 		self._pending_fire_frames = 0
-		obs, info = self._fire_until_running(obs, info, **kwargs)
+		obs, info = self._fire_until_running(obs, info, **kwargs) # fire until the game begins
 		return obs, info
 
 	def step(self, action: int):
-		self._fire_next_step_if_needed()
+		self._fire_next_step_if_needed() # in case the screen was reset
 		obs, reward, terminated, truncated, info = self.env.step(action)
 		lives = self._extract_lives(info)
 
@@ -62,19 +65,22 @@ class FireAtStart(gym.Wrapper):
 		)
 
 		if life_lost and not terminated and not truncated:
+			# the screen is going to reset, so next step we will need to fire
 			self._pending_fire_frames = self._fire_repeat_steps
 
 		if game_over:
+			# We force the game to be over, so the death penalty (later defined) is applied
+			# Otherwise, we can't know if the game is over because it's instantly resetted
 			terminated = True
 			self._pending_fire_frames = 0
 			info = dict(info)
-			info["fire_wrapper_forced_game_over"] = True
+			info["fire_wrapper_forced_game_over"] = True # this is used by DeathPenalty
 
 		self._lives = lives
 		return obs, reward, terminated, truncated, info
 
 	def _fire_until_running(self, obs, info, **kwargs):
-		# Some Atari envs require the FIRE action to exit the ready screen.
+		# When starting the game, press FIRE until the game begins
 		obs, _, terminated, truncated, info = self.env.step(self._fire_action)
 		while terminated or truncated:
 			obs, info = self.env.reset(**kwargs)
@@ -84,6 +90,7 @@ class FireAtStart(gym.Wrapper):
 		return obs, info
 
 	def _fire_next_step_if_needed(self):
+		# When the screen resets, fire until the pending fire frames are 0
 		while self._pending_fire_frames > 0:
 			obs, _, terminated, truncated, info = self.env.step(self._fire_action)
 			self._lives = self._extract_lives(info)
@@ -94,6 +101,8 @@ class FireAtStart(gym.Wrapper):
 				return
 
 	def _extract_lives(self, info: dict) -> int | None:
+		# Normally the info dict has a "lives" key, but depending on the version of the environment / library
+		# Source: ChatGPT
 		if "lives" in info:
 			return info["lives"]
 		ale = getattr(self.env.unwrapped, "ale", None)
@@ -144,23 +153,30 @@ class ResizeObservation(GymResizeObservation):
 
 
 # Death penalty
+# Applied when a life is lost (when a barrel hits Mario)
 class DeathPenalty(gym.Wrapper):
 	def __init__(self, env: gym.Env, config: dict):
 		super().__init__(env)
 		my_config = config["env"]["wrappers"]["death_penalty"]
 		self.death_penalty = my_config["value"] if isinstance(my_config, dict) else my_config
+		self.allow_for_levels = my_config["allow_for_levels"] if isinstance(my_config, dict) and "allow_for_levels" in my_config else None0
 
 	def step(self, action: int):
 		obs, reward, terminated, truncated, info = self.env.step(action)
 		if info.get("fire_wrapper_forced_game_over", False):
+			# when the game is over
 			reward += self.death_penalty
 
 		if terminated or truncated:
-			reward += self.death_penalty
-		
+			# on the allowed levels, when a life is lost
+			level = get_level(mario_position(obs))
+			if level in self.allow_for_levels:
+				reward += self.death_penalty
 		return obs, reward, terminated, truncated, info
 
 
+# Get the position of Mario in the observation
+# Source: notebooks/5-gent_position.ipynb
 def mario_position(obs):
 	redness = obs[:, :, 0].astype(np.int16) - np.maximum(obs[:, :, 1], obs[:, :, 2]).astype(np.int16)
 	max_redness = np.max(redness)
@@ -173,6 +189,8 @@ def mario_position(obs):
 	center_of_mass = np.mean(center_of_mass, axis=0)
 	return center_of_mass
 
+# Get the level (ramp) where currently Mario is
+# Source: notebooks/1-ladders_and_levels.ipynb
 def get_level(center_of_mass):
 	levels_height = [25, 25, 35, 25, 25, 25, 25]
 	levels_y_lst = [170, 145, 110, 85, 60, 35, 10]
@@ -182,6 +200,8 @@ def get_level(center_of_mass):
 	# if reaches here, probably mario is not in the obs (when died)
 	return 0
 
+# Get the distance to the closest ladder on the current level
+# Source: notebooks/1-ladders_and_levels.ipynb
 def distance_to_ladders(mario_pos):
 	def get_ladders_from_level(level):
 		ladders_x_coords = [[110], [50, 83], [110], [50, 71], [110], [34, 79], []]
@@ -202,6 +222,7 @@ def distance_to_ladders(mario_pos):
 
 
 # Reward for climbing a ladder (must be before ResizeObservation)
+# Applied for a pixel Mario climbs up
 class LadderClimbReward(gym.Wrapper):
 	def __init__(self, env: gym.Env, config: dict):
 		super().__init__(env)
@@ -224,7 +245,9 @@ class LadderClimbReward(gym.Wrapper):
 		obs, reward, terminated, truncated, info = self.env.step(action)
 		y = mario_position(obs)[0]
 
-		valid_action = (not self.require_up_action) or (action == 2)
+		# Only consider an increase of Mario's y position when pressing UP
+		# This avoids rewarding Mario for jumping
+		valid_action = action == 2
 		if not np.isnan(y_prev) and not np.isnan(y) and valid_action:
 			pixel_gain = max(0.0, y_prev - y)
 			bonus = self.reward_per_pixel * pixel_gain
@@ -237,6 +260,8 @@ class LadderClimbReward(gym.Wrapper):
 
 
 # Penalty for distance to ladders
+# Applied constantly per pixel Mario is away from the closest ladder on the current level
+# A schedule allows this penalty to be adjusted over time
 class DistanceToLaddersPenalty(gym.Wrapper):
 	def __init__(self, env: gym.Env, config: dict):
 		super().__init__(env)
@@ -253,13 +278,15 @@ class DistanceToLaddersPenalty(gym.Wrapper):
 	def step(self, action: int):
 		obs, reward, terminated, truncated, info = self.env.step(action)
 		mario_pos = mario_position(obs)
-		distance = distance_to_ladders(mario_pos) or [0]
+		distance = distance_to_ladders(mario_pos) or [0] # if no ladders (last level) no penalty
 		if np.isnan(np.min(distance)):
+			# Mario is not on the screen (when died)
 			distance = 0
 		else:
 			distance = np.min(distance)
 		scale = self.per_pixel_penalty
 		if self.schedule is not None:
+			# Adjust the penalty over time
 			scale = self.schedule.value(self.step_count)
 		reward += scale * distance
 		self.step_count += 1
@@ -267,11 +294,10 @@ class DistanceToLaddersPenalty(gym.Wrapper):
 
 
 # Reward for distance to ladders V2 (potential-based shaping)
+# Potential-based shaping: reward += scale * (gamma * Phi(s') - Phi(s))
+# where Phi(s) = -distance_to_ladders.
+# Source: https://arxiv.org/abs/2502.01307, implemented with the help of ChatGPT
 class LadderDistancePotential(gym.Wrapper):
-	"""
-	Potential-based shaping: reward += scale * (gamma * Phi(s') - Phi(s)),
-	where Phi(s) = -min ladder distance on current level.
-	"""
 	def __init__(self, env: gym.Env, config: dict):
 		super().__init__(env)
 		my_config = config["env"]["wrappers"]["ladder_distance_potential"]
@@ -310,17 +336,15 @@ class LadderDistancePotential(gym.Wrapper):
 		return -min_distance
 
 
+# One-time bonuses when Mario aligns with a ladder and attempts to climb.
 class LadderAlignmentBonus(gym.Wrapper):
-	"""
-	One-time bonuses when Mario aligns with a ladder and attempts to climb.
-	"""
 	def __init__(self, env: gym.Env, config: dict):
 		super().__init__(env)
 		my_config = config["env"]["wrappers"]["ladder_alignment_bonus"]
 		self.bonus = my_config["bonus"]
 		self.x_tolerance = my_config["x_tolerance"]
 		self.cooldown_steps = my_config["cooldown_steps"]
-		self.cooldown = 0
+		self.cooldown = 0 # to prevent multiple bonuses in a row
 
 	def reset(self, **kwargs):
 		self.cooldown = 0
@@ -361,19 +385,14 @@ class BarrelRewardCancellation(gym.Wrapper):
 
 	def step(self, action: int):
 		obs, reward, terminated, truncated, info = self.env.step(action)
-		level = get_level(mario_position(obs))
-		if self.prev_level is not None and self.prev_level < level:
-			# reset exception count if level has increased
-			self.exception_count = 0
-		self.prev_level = level
-		if level not in self.except_for_levels:
-			# Cancel barrel reward always if level is NOT in exceptions
-			if reward == 100:
-				reward = 0
-		else:
-			if reward == 100:
+		if reward == 100: # a barrel was jumped
+			level = get_level(mario_position(obs))
+			if level in self.except_for_levels:
 				self.exception_count += 1
 				if self.exception_count > self.exception_allow_count:
 					# cancel reward if exception_count barrels have already given reward on this level
 					reward = 0
+			else:
+				# cancel reward if level is not in exceptions
+				reward = 0
 		return obs, reward, terminated, truncated, info
