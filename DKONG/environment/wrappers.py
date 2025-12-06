@@ -228,7 +228,6 @@ class LadderClimbReward(gym.Wrapper):
 		super().__init__(env)
 		my_config = config["env"]["wrappers"]["ladder_climb_reward"]
 		self.reward_per_pixel = my_config["reward_per_pixel"]
-		self.require_up_action = my_config["require_up_action"]
 		self.max_bonus = my_config["max_bonus"]
 		self.prev_obs = None
 
