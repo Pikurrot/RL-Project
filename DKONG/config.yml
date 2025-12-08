@@ -6,7 +6,7 @@ video_dir: ./videos/
 wandb:
   entity: paradigms-team
   project: DonkeyKong
-  run_name: ppo_exp_barrel_reward_cancellation_no_death_penalty_allow_34_1
+  run_name: ppo_exp_pretrained_ppo
   gradient_save_freq: 100
 
 env:
@@ -97,6 +97,7 @@ model:
     #   total_steps: 5000000
     vf_coef: 0.5 # value function coefficient for the loss calculation
     total_timesteps: 20_000_000 # for training
+    checkpoint_path: ppo_exp_barrel_reward_cancellation_no_death_penalty/best/best_model.zip
     policy_kwargs:
       features_extractor_class: CustomCNN
       features_extractor_kwargs:
