@@ -210,3 +210,14 @@ __marimo__/
 # Custom
 *.lock
 *.toml
+*.gif
+*.csv
+*.zip
+*.mp4
+DKONG/wandb/
+DKONG/logs/
+*screenlog.0
+DKONG/demo
+DKONG/temp.ipynb
+reinforce_normal.ipynb
+TODO.txt

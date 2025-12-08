@@ -1,0 +1,104 @@
+checkpoints_dir: /data/users/elopez/checkpoints_dkong
+checkpoints_dir_pretrained: /data/users/elopez/checkpoints_dkong_pretrained
+monitor_dir: ./logs/
+video_dir: ./videos/
+
+wandb:
+  entity: paradigms-team
+  project: DonkeyKong
+  run_name: ppo_exp_barrel_reward_cancellation_no_death_penalty_allow_34_1
+  gradient_save_freq: 100
+
+env:
+  env_id: ALE/DonkeyKong-v5
+  n_envs: 9
+  frame_stack: 4 # number of frames to stack
+  wrappers:
+    fire_at_start: true
+    minimal_action_space:
+      enabled: true
+      minimal_actions: [0, 1, 2, 3, 4, 11, 12]
+    death_penalty:
+      enabled: true
+      value: -100
+      allow_for_levels: [3, 4]
+    barrel_reward_cancellation:
+      enabled: true
+      except_for_levels: [3, 4]
+      exception_allow_count: 1 # allow only 1 barrel giving reward on these levels
+    ladder_climb_reward:
+      enabled: true
+      reward_per_pixel: 2.0
+      max_bonus: 100
+    ladder_alignment_bonus:
+      enabled: false
+      bonus: 5.0
+      x_tolerance: 3.0
+      cooldown_steps: 10
+    ladder_distance_potential:
+      enabled: false
+      scale: 0.5
+      schedule: null
+        # type: linear
+        # start: 0.0
+        # end: 1.0
+        # total_steps: 1000000
+    ladder_distance_penalty:
+      enabled: true
+      per_pixel_penalty: -0.005
+      schedule: null
+        # type: linear
+        # start: 0.0
+        # end: -0.01
+        # total_steps: 1000000
+    resize_observation:
+      enabled: true
+      size: [128, 128]
+    grayscale_observation: true
+    add_channel_dim: true
+    scale_observation: true
+
+eval:
+  eval_freq: 100000 # eval and save model every n steps
+  n_eval_episodes: 5
+  video_every: 1 # record every n evaluations
+  video_length: 2000  # max frames to record
+
+model:
+  select_model: PPO
+  save_freq: 10000 # save model every n steps
+  DQN:
+    policy: CnnPolicy
+    learning_rate: 1e-4
+    buffer_size: 50_000 # size of the replay buffer (in transitions)
+    learning_starts: 1000 # number of transitions collected before learning starts
+    batch_size: 32 # size of the batch
+    tau: 1.0 # target network update coefficient (intuitively, the speed of the target network to follow the primary network)
+    gamma: 0.99 # discount factor
+    train_freq: 4 # update the network every n steps
+    target_update_interval: 1_000 # update the target network every n steps
+    exploration_fraction: 0.1 # fraction of the training steps for exploration
+    exploration_initial_eps: 1.0 # initial exploration epsilon
+    exploration_final_eps: 0.01 # final exploration epsilon
+    total_timesteps: 100_000 # for training
+  PPO:
+    policy: CnnPolicy
+    learning_rate: 1e-4
+    n_steps: 2048
+    batch_size: 256
+    n_epochs: 10
+    gamma: 0.99
+    clip_range: 0.1
+    ent_coef: 0.01 # entropy coefficient for the loss calculation
+    # ent_coef_schedule:
+    #   type: cosine
+    #   start: 0.02
+    #   end: 0.005
+    #   total_steps: 5000000
+    vf_coef: 0.5 # value function coefficient for the loss calculation
+    total_timesteps: 20_000_000 # for training
+    policy_kwargs:
+      features_extractor_class: CustomCNN
+      features_extractor_kwargs:
+        features_dim: 256
+        checkpoint_path: inverse_dynamics_v2_1/checkpoints/step_0100000.pt
