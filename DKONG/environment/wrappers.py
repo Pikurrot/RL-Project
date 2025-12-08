@@ -159,7 +159,7 @@ class DeathPenalty(gym.Wrapper):
 		super().__init__(env)
 		my_config = config["env"]["wrappers"]["death_penalty"]
 		self.death_penalty = my_config["value"] if isinstance(my_config, dict) else my_config
-		self.allow_for_levels = my_config["allow_for_levels"] if isinstance(my_config, dict) and "allow_for_levels" in my_config else None0
+		self.allow_for_levels = my_config["allow_for_levels"] if isinstance(my_config, dict) and "allow_for_levels" in my_config else None
 
 	def step(self, action: int):
 		obs, reward, terminated, truncated, info = self.env.step(action)
