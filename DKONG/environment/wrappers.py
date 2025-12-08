@@ -59,14 +59,16 @@ class FireAtStart(gym.Wrapper):
 		game_over = (
 			self._lives is not None
 			and lives is not None
-			and lives == 0
-			and not terminated
-			and not truncated
+			and (terminated or truncated)
+			# and lives == 0
+			# and not terminated
+			# and not truncated
 		)
 
 		if life_lost and not terminated and not truncated:
 			# the screen is going to reset, so next step we will need to fire
 			self._pending_fire_frames = self._fire_repeat_steps
+			info["life_lost"] = True # this is used by DeathPenalty
 
 		if game_over:
 			# We force the game to be over, so the death penalty (later defined) is applied
@@ -160,18 +162,28 @@ class DeathPenalty(gym.Wrapper):
 		my_config = config["env"]["wrappers"]["death_penalty"]
 		self.death_penalty = my_config["value"] if isinstance(my_config, dict) else my_config
 		self.allow_for_levels = my_config["allow_for_levels"] if isinstance(my_config, dict) and "allow_for_levels" in my_config else None
+		self.prev_obs = None
+
+	def reset(self, **kwargs):
+		obs, info = self.env.reset(**kwargs)
+		self.prev_obs = obs
+		return obs, info
 
 	def step(self, action: int):
 		obs, reward, terminated, truncated, info = self.env.step(action)
-		if info.get("fire_wrapper_forced_game_over", False):
-			# when the game is over
-			reward += self.death_penalty
-
-		if terminated or truncated:
+		if (
+			terminated or truncated or
+			info.get("fire_wrapper_forced_game_over", False) or
+			info.get("life_lost", False)
+		):
 			# on the allowed levels, when a life is lost
-			level = get_level(mario_position(obs))
-			if level in self.allow_for_levels:
+			if self.allow_for_levels is not None:
+				level = get_level(mario_position(self.prev_obs))
+				if level in self.allow_for_levels:
+					reward += self.death_penalty
+			else:
 				reward += self.death_penalty
+		self.prev_obs = obs
 		return obs, reward, terminated, truncated, info
 
 
