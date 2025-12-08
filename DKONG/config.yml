@@ -21,10 +21,10 @@ env:
     death_penalty:
       enabled: true
       value: -100
-      allow_for_levels: [3, 4]
+      allow_for_levels: [3, 4, 5]
     barrel_reward_cancellation:
       enabled: true
-      except_for_levels: [3, 4]
+      except_for_levels: [3, 4, 5]
       exception_allow_count: 1 # allow only 1 barrel giving reward on these levels
     ladder_climb_reward:
       enabled: true
