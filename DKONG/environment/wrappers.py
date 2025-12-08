@@ -59,10 +59,9 @@ class FireAtStart(gym.Wrapper):
 		game_over = (
 			self._lives is not None
 			and lives is not None
-			and (terminated or truncated)
-			# and lives == 0
-			# and not terminated
-			# and not truncated
+			and lives == 0
+			and not terminated
+			and not truncated
 		)
 
 		if life_lost and not terminated and not truncated:
