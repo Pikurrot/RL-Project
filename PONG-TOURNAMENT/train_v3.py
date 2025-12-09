@@ -21,6 +21,7 @@ import torch.nn.functional as F
 import imageio
 from stable_baselines3 import PPO
 import stable_baselines3
+from stable_baselines3.common.base_class import BaseAlgorithm
 import wandb
 from wandb.integration.sb3 import WandbCallback
 from pathlib import Path
@@ -101,6 +102,11 @@ def make_env(render_mode="rgb_array"):
 
     return env
 
+def _is_model_provider(candidate) -> bool:
+    """Returns True if candidate is a zero-arg factory, not a policy instance."""
+    return callable(candidate) and not isinstance(candidate, (nn.Module, BaseAlgorithm))
+
+
 class PZSingleAgentWrapper(gym.Env):
     metadata = {"render_modes": ["rgb_array", "human"]}
 
@@ -135,7 +141,7 @@ class PZSingleAgentWrapper(gym.Env):
         self.action_space = self.env.action_space(self.player_id)
         self.opponent_action_space = self.env.action_space(self.opponent_id)
 
-        if callable(opponent_model):
+        if _is_model_provider(opponent_model):
             self._opponent_provider = opponent_model
         else:
             self._opponent_provider = lambda: opponent_model
