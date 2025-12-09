@@ -6,7 +6,7 @@ HOSTNAME = socket.gethostname()
 if HOSTNAME == "cudahpc16":
 	# idk who set up this cluster but without this the gpu is not detected
 	os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-	os.environ["CUDA_VISIBLE_DEVICES"] = "6"
+	os.environ["CUDA_VISIBLE_DEVICES"] = "8"
 	os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 import numpy as np
@@ -24,17 +24,19 @@ import stable_baselines3
 import wandb
 from wandb.integration.sb3 import WandbCallback
 from pathlib import Path
+from typing import Callable, List, Tuple
 
 MAX_INT = int(10e6)
 TIME_STEP_MAX = 100000
-CHECKPOINT_DIR = Path("/data/users/elopez/checkpoints_pong2")
-VIDEOS_DIR = Path("./videos2")
+CHECKPOINT_DIR = Path("/data/users/elopez/checkpoints_pong3")
+VIDEOS_DIR = Path("./videos3")
 WANDB_ENTITY = "paradigms-team"
 WANDB_PROJECT = "PongTorunament"
-WANDB_RUN_NAME = "pong_v2"
+WANDB_RUN_NAME = "pong_v3"
 SCRIPT_NAME = Path(__file__).stem
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+OPPONENT_EXPLORATION_PROB = 0.05
 
 CHECKPOINT_DIR.mkdir(parents=True, exist_ok=True)
 VIDEOS_DIR.mkdir(parents=True, exist_ok=True)
@@ -51,6 +53,35 @@ wandb_run = wandb.init(
         "device": DEVICE.type,
     },
 )
+
+
+class OpponentPool:
+    """Stores opponent factories so we can sample past versions."""
+
+    def __init__(self, name: str):
+        self.name = name
+        self._entries: List[Tuple[str, Callable[[], object]]] = []
+        self._rng = random.Random()
+
+    def add(self, label: str, factory: Callable[[], object]) -> None:
+        self._entries.append((label, factory))
+
+    def sample_model(self):
+        if not self._entries:
+            raise RuntimeError(f"Opponent pool '{self.name}' is empty.")
+        label, factory = self._rng.choice(self._entries)
+        return factory()
+
+    def __len__(self) -> int:
+        return len(self._entries)
+
+
+def register_ppo_checkpoint(pool: OpponentPool, label: str, checkpoint_path: Path) -> None:
+    """Adds a PPO checkpoint loader to the given opponent pool."""
+    pool.add(
+        label,
+        lambda path=str(checkpoint_path): PPO.load(path, device=DEVICE),
+    )
 
 def get_seed(MAX_INT=int(10e6)):
     return random.randint(0, MAX_INT)
@@ -73,7 +104,14 @@ def make_env(render_mode="rgb_array"):
 class PZSingleAgentWrapper(gym.Env):
     metadata = {"render_modes": ["rgb_array", "human"]}
 
-    def __init__(self, player_id, opponent_model, render_mode=None):
+    def __init__(
+        self,
+        player_id,
+        opponent_model,
+        render_mode=None,
+        opponent_deterministic=False,
+        opponent_exploration=OPPONENT_EXPLORATION_PROB,
+    ):
         super().__init__()
 
         self.player_id = player_id
@@ -95,22 +133,43 @@ class PZSingleAgentWrapper(gym.Env):
 
         # Espacio de acciones del agente
         self.action_space = self.env.action_space(self.player_id)
+        self.opponent_action_space = self.env.action_space(self.opponent_id)
 
-        self.opponent_model = opponent_model
+        if callable(opponent_model):
+            self._opponent_provider = opponent_model
+        else:
+            self._opponent_provider = lambda: opponent_model
+
+        self.opponent_model = self._opponent_provider()
+        self.opponent_deterministic = opponent_deterministic
+        self.opponent_exploration = opponent_exploration
 
         self.agent_iter = None  # Guardaremos el iterador
+
+    def _refresh_opponent_model(self) -> None:
+        self.opponent_model = self._opponent_provider()
+
+    def _should_explore(self) -> bool:
+        return self.opponent_exploration > 0 and random.random() < self.opponent_exploration
     
     def _opponent_act(self, obs):
         """Returns the opponent action depending on model type."""
+        if self._should_explore():
+            return self.opponent_action_space.sample()
+
         if isinstance(self.opponent_model, DQN):
             with torch.no_grad():
                 t = torch.tensor(obs, dtype=torch.float32, device=DEVICE).unsqueeze(0) / 255.0
                 return self.opponent_model(t).argmax().item()
         else:
-            act, _ = self.opponent_model.predict(obs, deterministic=True)
+            act, _ = self.opponent_model.predict(
+                obs,
+                deterministic=self.opponent_deterministic,
+            )
             return act
 
     def reset(self, *, seed=None, options=None):
+        self._refresh_opponent_model()
         self.env.reset(seed=seed)
         self.agent_iter = iter(self.env.agent_iter())
     
@@ -121,6 +180,10 @@ class PZSingleAgentWrapper(gym.Env):
     
             if agent == self.player_id:
                 return obs, {}
+
+            if terminated or truncated:
+                self.env.step(None)
+                continue
 
             act = self._opponent_act(obs)
             self.env.step(act)
@@ -140,6 +203,10 @@ class PZSingleAgentWrapper(gym.Env):
                 reward_agent = reward
                 done = terminated or truncated
                 return obs_agent, reward_agent, done, False, {}
+
+            if terminated or truncated:
+                self.env.step(None)
+                continue
 
             act = self._opponent_act(obs)
             self.env.step(act)
@@ -171,6 +238,11 @@ opponent_model = DQN(4, 6).to(DEVICE)
 opponent_model.load_state_dict(
     torch.load(CHECKPOINT_DIR / "checkpoint_best.pth", map_location=DEVICE)["policy_state_dict"]
 )
+opponent_model.eval()
+
+right_opponent_pool = OpponentPool("right_players")
+right_opponent_pool.add("pretrained_dqn", lambda: opponent_model)
+left_opponent_pool = OpponentPool("left_players")
 
 def policy_predict(model, obs, deterministic=True):
     """Returns an action for either PPO or DQN opponents."""
@@ -209,7 +281,12 @@ def build_video_path(tag: str) -> Path:
 
 def evaluate_agent(agent, opponent, player_id: str, episodes: int = 5) -> float:
     """Runs short rollouts to estimate the agent reward versus a fixed opponent."""
-    env = PZSingleAgentWrapper(player_id=player_id, opponent_model=opponent)
+    env = PZSingleAgentWrapper(
+        player_id=player_id,
+        opponent_model=opponent,
+        opponent_deterministic=True,
+        opponent_exploration=0.0,
+    )
     rewards = []
     for _ in range(episodes):
         obs, _ = env.reset()
@@ -276,7 +353,11 @@ def record_match(left_model, right_model, filename="match.gif", max_steps=3000):
     return filename
 
 
-env_left = PZSingleAgentWrapper(player_id="second_0", opponent_model=opponent_model)
+env_left = PZSingleAgentWrapper(
+    player_id="second_0",
+    opponent_model=right_opponent_pool.sample_model,
+    opponent_exploration=OPPONENT_EXPLORATION_PROB,
+)
 
 print("LEFT vs DQN")
 
@@ -305,11 +386,17 @@ left_initial_avg_reward = evaluate_agent(
     player_id="second_0",
 )
 log_average_reward("left", left_initial_avg_reward, step=model_left.num_timesteps)
-model_left.save(CHECKPOINT_DIR / "left1.zip")
+left_initial_ckpt = CHECKPOINT_DIR / "left1.zip"
+model_left.save(left_initial_ckpt)
+register_ppo_checkpoint(left_opponent_pool, "left_initial_ckpt", left_initial_ckpt)
+left_model = PPO.load(left_initial_ckpt, device=DEVICE)
+left_opponent_pool.add("left_live", lambda: left_model)
 
-left_frozen = PPO.load(CHECKPOINT_DIR / "left1.zip", device=DEVICE)
-
-env_right = PZSingleAgentWrapper(player_id="first_0", opponent_model=left_frozen)
+env_right = PZSingleAgentWrapper(
+    player_id="first_0",
+    opponent_model=left_opponent_pool.sample_model,
+    opponent_exploration=OPPONENT_EXPLORATION_PROB,
+)
 
 print("RIGHT vs LEFT")
 model_right = PPO("CnnPolicy", env_right, verbose=1, device=DEVICE)
@@ -321,33 +408,37 @@ model_right.learn(
 )
 right_initial_avg_reward = evaluate_agent(
     agent=model_right,
-    opponent=model_left,
+    opponent=left_model,
     player_id="first_0",
 )
 log_average_reward("right", right_initial_avg_reward, step=model_right.num_timesteps)
 post_right_gif = record_match(
-    left_model=model_left,
+    left_model=left_model,
     right_model=model_right,
     filename=build_video_path("match_post_right"),
 )
 log_match_video(Path(post_right_gif), "post_right")
-model_right.save(CHECKPOINT_DIR / "right1.zip")
-
-
-left_model = PPO.load(CHECKPOINT_DIR / "left1.zip", device=DEVICE)
-right_model = PPO.load(CHECKPOINT_DIR / "right1.zip", device=DEVICE)
+right_initial_ckpt = CHECKPOINT_DIR / "right1.zip"
+model_right.save(right_initial_ckpt)
+register_ppo_checkpoint(right_opponent_pool, "right_initial_ckpt", right_initial_ckpt)
+right_model = PPO.load(right_initial_ckpt, device=DEVICE)
+right_opponent_pool.add("right_live", lambda: right_model)
 
 print(f"=== PRE-TRAIN: GENERANDO GIF ===")
 gif_path = record_match(left_model, right_model, filename=VIDEOS_DIR / "match_iter_0.gif")
 log_match_video(Path(gif_path), "iter_0")
 
-for i in range(20):
+for i in range(10):
     print(f"=== CICLO {i}: ENTRENANDO LEFT ===")
     
-    env_left = PZSingleAgentWrapper("second_0", opponent_model=right_model)
+    env_left = PZSingleAgentWrapper(
+        "second_0",
+        opponent_model=right_opponent_pool.sample_model,
+        opponent_exploration=OPPONENT_EXPLORATION_PROB,
+    )
     left_model.set_env(env_left)
     left_model.learn(
-        200000,
+        100000,
         log_interval=30,
         reset_num_timesteps=False,
         callback=make_wandb_callback(f"left_iter_{i}"),
@@ -358,14 +449,20 @@ for i in range(20):
         player_id="second_0",
     )
     log_average_reward("left", left_cycle_avg_reward, step=left_model.num_timesteps)
-    left_model.save(CHECKPOINT_DIR / f"left_iter_{i}.zip")
+    left_iter_ckpt = CHECKPOINT_DIR / f"left_iter_{i}.zip"
+    left_model.save(left_iter_ckpt)
+    register_ppo_checkpoint(left_opponent_pool, f"left_iter_{i}", left_iter_ckpt)
 
     print(f"=== CICLO {i}: ENTRENANDO RIGHT ===")
     
-    env_right = PZSingleAgentWrapper("first_0", opponent_model=left_model)
+    env_right = PZSingleAgentWrapper(
+        "first_0",
+        opponent_model=left_opponent_pool.sample_model,
+        opponent_exploration=OPPONENT_EXPLORATION_PROB,
+    )
     right_model.set_env(env_right)
     right_model.learn(
-        200000,
+        100000,
         log_interval=30,
         reset_num_timesteps=False,
         callback=make_wandb_callback(f"right_iter_{i}"),
@@ -376,7 +473,9 @@ for i in range(20):
         player_id="first_0",
     )
     log_average_reward("right", right_cycle_avg_reward, step=right_model.num_timesteps)
-    right_model.save(CHECKPOINT_DIR / f"right_iter_{i}.zip")
+    right_iter_ckpt = CHECKPOINT_DIR / f"right_iter_{i}.zip"
+    right_model.save(right_iter_ckpt)
+    register_ppo_checkpoint(right_opponent_pool, f"right_iter_{i}", right_iter_ckpt)
 
     print(f"=== CICLO {i}: GENERANDO GIF ===")
     gif_path = record_match(left_model, right_model, filename=VIDEOS_DIR / f"match_iter_{i+1}.gif")

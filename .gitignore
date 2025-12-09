@@ -218,6 +218,7 @@ DKONG/wandb/
 DKONG/logs/
 *screenlog.0
 DKONG/demo
+DKONG/demo_public
 DKONG/temp.ipynb
 reinforce_normal.ipynb
 TODO.txt
