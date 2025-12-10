@@ -6,7 +6,7 @@ HOSTNAME = socket.gethostname()
 if HOSTNAME == "cudahpc16":
     # idk who set up this cluster but without this the gpu is not detected
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-    os.environ["CUDA_VISIBLE_DEVICES"] = "6"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "5"
     os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 import numpy as np
@@ -21,17 +21,20 @@ import torch.nn.functional as F
 import imageio
 from stable_baselines3 import PPO
 import stable_baselines3
+from stable_baselines3.common.vec_env import DummyVecEnv
 import wandb
 from wandb.integration.sb3 import WandbCallback
 from pathlib import Path
 
 MAX_INT = int(10e6)
-TIME_STEP_MAX = 100000
-CHECKPOINT_DIR = Path("/data/users/elopez/checkpoints_pong2")
-VIDEOS_DIR = Path("./videos2")
+RUN_NAME = "distance_penalty_float_solved"
+N_ENVS = 16
+DQN_CHECKPOINT = Path("/data/users/elopez/checkpoints_pong/checkpoint_best.pth")
+CHECKPOINT_DIR = Path(f"/data/users/elopez/checkpoints_pong/{RUN_NAME}")
+VIDEOS_DIR = Path(f"./videos/{RUN_NAME}")
 WANDB_ENTITY = "paradigms-team"
 WANDB_PROJECT = "PongTorunament"
-WANDB_RUN_NAME = "pong_v2"
+WANDB_RUN_NAME = RUN_NAME
 SCRIPT_NAME = Path(__file__).stem
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -43,13 +46,7 @@ VIDEOS_DIR.mkdir(parents=True, exist_ok=True)
 wandb_run = wandb.init(
     entity=WANDB_ENTITY,
     project=WANDB_PROJECT,
-    name=WANDB_RUN_NAME,
-    config={
-        "total_timesteps_initial": 300_000,
-        "total_timesteps_cycle": 100_000,
-        "time_step_max": TIME_STEP_MAX,
-        "device": DEVICE.type,
-    },
+    name=WANDB_RUN_NAME
 )
 
 def get_seed(MAX_INT=int(10e6)):
@@ -70,6 +67,39 @@ def make_env(render_mode="rgb_array"):
 
     return env
 
+
+def find_ball(obs):
+	y_min, y_max = 14, 78
+	obs_crop = obs[y_min:y_max, :]
+	obs_crop = obs_crop > 0.5
+	# get center of mass
+	center_of_mass = np.argwhere(obs_crop)
+	center_of_mass = np.mean(center_of_mass, axis=0)
+	center_of_mass[0] += y_min
+	# if is nan, return None
+	if np.isnan(center_of_mass).any():
+		return (None, None)
+	return center_of_mass # (y, x)
+
+def get_agent_position(obs, player_id):
+	assert player_id in ["first_0", "second_0"]
+	y_min, y_max = 14, 78
+	x_threshold = 40
+	if player_id == "second_0": # left player
+		obs_crop = obs[y_min:y_max, :x_threshold]
+	else: # right player
+		obs_crop = obs[y_min:y_max, x_threshold:]
+	obs_crop = (obs_crop > 0.1) & (obs_crop < 0.3)
+	center_of_mass = np.argwhere(obs_crop)
+	center_of_mass = np.mean(center_of_mass, axis=0)
+	center_of_mass[0] += y_min
+	if player_id == "first_0":
+		center_of_mass[1] += x_threshold
+	if np.isnan(center_of_mass).any():
+		return (None, None)
+	return center_of_mass # (y, x)
+
+
 class PZSingleAgentWrapper(gym.Env):
     metadata = {"render_modes": ["rgb_array", "human"]}
 
@@ -88,9 +118,9 @@ class PZSingleAgentWrapper(gym.Env):
         # Space debe ser uint8 para CnnPolicy
         self.observation_space = spaces.Box(
             low=0,
-            high=255,
+            high=1,
             shape=example_obs.shape,
-            dtype=np.uint8
+            dtype=np.float32
         )
 
         # Espacio de acciones del agente
@@ -103,8 +133,9 @@ class PZSingleAgentWrapper(gym.Env):
     def _opponent_act(self, obs):
         """Returns the opponent action depending on model type."""
         if isinstance(self.opponent_model, DQN):
+            # Observations are already normalized to [0, 1], no further scaling needed
             with torch.no_grad():
-                t = torch.tensor(obs, dtype=torch.float32, device=DEVICE).unsqueeze(0) / 255.0
+                t = torch.tensor(obs, dtype=torch.float32, device=DEVICE).unsqueeze(0)
                 return self.opponent_model(t).argmax().item()
         else:
             act, _ = self.opponent_model.predict(obs, deterministic=True)
@@ -142,8 +173,18 @@ class PZSingleAgentWrapper(gym.Env):
     
             if agent == self.player_id:
                 obs_agent = obs
+                # Cancel any reward
+                reward = 0
+                # Penalty for y distance to ball
+                ball_y, ball_x = find_ball(obs)
+                agent_y, agent_x = get_agent_position(obs, self.player_id)
+                if ball_y is not None and agent_y is not None:
+                    reward -= abs(ball_y - agent_y) * 0.1
                 reward_agent = reward
                 done = terminated or truncated
+                if done:
+                    # Advance the AEC env after termination/truncation
+                    self.env.step(None)
                 return obs_agent, reward_agent, done, False, {}
 
             if terminated or truncated:
@@ -177,18 +218,15 @@ class DQN(nn.Module):
 
 opponent_model = DQN(4, 6).to(DEVICE)
 opponent_model.load_state_dict(
-    torch.load(CHECKPOINT_DIR / "checkpoint_best.pth", map_location=DEVICE)["policy_state_dict"]
+    torch.load(DQN_CHECKPOINT, map_location=DEVICE)["policy_state_dict"]
 )
 
 def policy_predict(model, obs, deterministic=True):
     """Returns an action for either PPO or DQN opponents."""
     if isinstance(model, DQN):
         with torch.no_grad():
-            t = (
-                torch.tensor(obs, dtype=torch.float32, device=DEVICE)
-                .unsqueeze(0)
-                .div_(255.0)
-            )
+            # Observations already normalized to [0, 1]
+            t = torch.tensor(obs, dtype=torch.float32, device=DEVICE).unsqueeze(0)
             return int(model(t).argmax(dim=1).item())
 
     action, _ = model.predict(obs, deterministic=deterministic)
@@ -214,6 +252,12 @@ def log_match_video(path: Path, label: str) -> None:
 
 def build_video_path(tag: str) -> Path:
     return VIDEOS_DIR / f"{SCRIPT_NAME}_{tag}.gif"
+
+def make_vector_env(player_id: str, opponent_model, n_envs: int = N_ENVS):
+    """Creates a simple vectorized env to speed up data collection."""
+    return DummyVecEnv(
+        [lambda: PZSingleAgentWrapper(player_id=player_id, opponent_model=opponent_model) for _ in range(n_envs)]
+    )
 
 def evaluate_agent(agent, opponent, player_id: str, episodes: int = 5) -> float:
     """Runs short rollouts to estimate the agent reward versus a fixed opponent."""
@@ -284,11 +328,17 @@ def record_match(left_model, right_model, filename="match.gif", max_steps=3000):
     return filename
 
 
-env_left = PZSingleAgentWrapper(player_id="second_0", opponent_model=opponent_model)
+env_left = make_vector_env(player_id="second_0", opponent_model=opponent_model)
 
 print("LEFT vs DQN")
 
-model_left = PPO("CnnPolicy", env_left, verbose=1, device=DEVICE)
+model_left = PPO(
+    "CnnPolicy",
+    env_left,
+    verbose=1,
+    device=DEVICE,
+    policy_kwargs={"normalize_images": False},
+)
 pre_left_gif = record_match(
     model_left,
     opponent_model,
@@ -296,7 +346,7 @@ pre_left_gif = record_match(
 )
 log_match_video(Path(pre_left_gif), "pre_left")
 model_left.learn(
-    total_timesteps=300_000,
+    total_timesteps=100_000,
     progress_bar=True,
     log_interval=25,
     callback=make_wandb_callback("left_initial"),
@@ -317,12 +367,18 @@ model_left.save(CHECKPOINT_DIR / "left1.zip")
 
 left_frozen = PPO.load(CHECKPOINT_DIR / "left1.zip", device=DEVICE)
 
-env_right = PZSingleAgentWrapper(player_id="first_0", opponent_model=left_frozen)
+env_right = make_vector_env(player_id="first_0", opponent_model=left_frozen)
 
 print("RIGHT vs LEFT")
-model_right = PPO("CnnPolicy", env_right, verbose=1, device=DEVICE)
+model_right = PPO(
+    "CnnPolicy",
+    env_right,
+    verbose=1,
+    device=DEVICE,
+    policy_kwargs={"normalize_images": False},
+)
 model_right.learn(
-    total_timesteps=300_000,
+    total_timesteps=100_000,
     progress_bar=True,
     log_interval=25,
     callback=make_wandb_callback("right_initial"),
@@ -349,13 +405,16 @@ print(f"=== PRE-TRAIN: GENERANDO GIF ===")
 gif_path = record_match(left_model, right_model, filename=VIDEOS_DIR / "match_iter_0.gif")
 log_match_video(Path(gif_path), "iter_0")
 
-for i in range(20):
+for i in range(10):
     print(f"=== CICLO {i}: ENTRENANDO LEFT ===")
     
-    env_left = PZSingleAgentWrapper("second_0", opponent_model=right_model)
+    current_left_env = left_model.get_env()
+    if current_left_env is not None:
+        current_left_env.close()
+    env_left = make_vector_env("second_0", opponent_model=right_model)
     left_model.set_env(env_left)
     left_model.learn(
-        200000,
+        50000,
         log_interval=30,
         reset_num_timesteps=False,
         callback=make_wandb_callback(f"left_iter_{i}"),
@@ -370,10 +429,13 @@ for i in range(20):
 
     print(f"=== CICLO {i}: ENTRENANDO RIGHT ===")
     
-    env_right = PZSingleAgentWrapper("first_0", opponent_model=left_model)
+    current_right_env = right_model.get_env()
+    if current_right_env is not None:
+        current_right_env.close()
+    env_right = make_vector_env("first_0", opponent_model=left_model)
     right_model.set_env(env_right)
     right_model.learn(
-        200000,
+        50000,
         log_interval=30,
         reset_num_timesteps=False,
         callback=make_wandb_callback(f"right_iter_{i}"),
