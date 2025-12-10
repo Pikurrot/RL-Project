@@ -300,6 +300,7 @@ class DistanceToLaddersPenalty(gym.Wrapper):
 			scale = self.schedule.value(self.step_count)
 		reward += scale * distance
 		self.step_count += 1
+		info["mario_pos"] = mario_pos
 		return obs, reward, terminated, truncated, info
 
 
@@ -405,4 +406,48 @@ class BarrelRewardCancellation(gym.Wrapper):
 			else:
 				# cancel reward if level is not in exceptions
 				reward = 0
+		return obs, reward, terminated, truncated, info
+
+
+# Cancel Hammer Rewards, allow only N hammer rewards
+class HammerRewardCancellation(gym.Wrapper):
+	def __init__(self, env: gym.Env, config: dict):
+		super().__init__(env)
+		my_config = config["env"]["wrappers"]["hammer_reward_cancellation"]
+		self.exception_allow_count = my_config["exception_allow_count"]
+		self.exception_count = 0
+		self.prev_obs = None
+
+	def reset(self, **kwargs):
+		self.exception_count = 0
+		self.prev_obs = None
+		return self.env.reset(**kwargs)
+
+	def step(self, action: int):
+		obs, reward, terminated, truncated, info = self.env.step(action)
+		if reward == 800: # a barrel was hit with a hammer
+			self.exception_count += 1
+			if self.exception_count > self.exception_allow_count:
+				# cancel reward if exception_count hammer hits have already given reward
+				reward = 0
+		return obs, reward, terminated, truncated, info
+
+
+# End at level (must be after ladder distance penalty)
+class EndAtLevel(gym.Wrapper):
+	def __init__(self, env: gym.Env, config: dict):
+		super().__init__(env)
+		my_config = config["env"]["wrappers"]["end_at_level"]
+		self.level = my_config["level"]
+
+	def reset(self, **kwargs):
+		return self.env.reset(**kwargs)
+
+	def step(self, action: int):
+		obs, reward, terminated, truncated, info = self.env.step(action)
+		mario_pos = info.get("mario_pos", None)
+		if mario_pos is not None:
+			level = get_level(mario_pos)
+			if level >= self.level:
+				terminated = True
 		return obs, reward, terminated, truncated, info

@@ -20,6 +20,8 @@ from .wrappers import (
 	LadderDistancePotential,
 	LadderAlignmentBonus,
 	BarrelRewardCancellation,
+	HammerRewardCancellation,
+	EndAtLevel,
 )
 
 logger = logging.getLogger(__name__)
@@ -98,6 +100,9 @@ def make_env(config: dict) -> gym.Env:
 	if _enabled("barrel_reward_cancellation"):
 		env = BarrelRewardCancellation(env, config)
 
+	if _enabled("hammer_reward_cancellation"):
+		env = HammerRewardCancellation(env, config)
+
 	if _enabled("ladder_climb_reward"):
 		env = LadderClimbReward(env, config)
 
@@ -109,6 +114,9 @@ def make_env(config: dict) -> gym.Env:
 
 	if _enabled("ladder_distance_penalty"):
 		env = DistanceToLaddersPenalty(env, config)
+
+	if _enabled("end_at_level"):
+		env = EndAtLevel(env, config)
 
 	if _enabled("resize_observation"):
 		env = ResizeObservation(env, config)
