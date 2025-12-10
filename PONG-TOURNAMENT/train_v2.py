@@ -4,10 +4,10 @@ import socket
 HOSTNAME = socket.gethostname()
 
 if HOSTNAME == "cudahpc16":
-	# idk who set up this cluster but without this the gpu is not detected
-	os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-	os.environ["CUDA_VISIBLE_DEVICES"] = "6"
-	os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+    # idk who set up this cluster but without this the gpu is not detected
+    os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "6"
+    os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 import numpy as np
 import random
@@ -58,11 +58,11 @@ def get_seed(MAX_INT=int(10e6)):
 def make_env(render_mode="rgb_array"):
     env = pong_v3.env(num_players=2, render_mode=render_mode)
 
-    env = ss.sticky_actions_v0(env, repeat_action_probability=0.25)
     env = ss.color_reduction_v0(env, mode="B")
     env = ss.resize_v1(env, x_size=84, y_size=84)
     env = ss.frame_stack_v1(env, 4, stack_dim=0)
-    env = ss.dtype_v0(env, dtype=np.uint8)
+    env = ss.dtype_v0(env, dtype=np.float32)
+    env = ss.normalize_obs_v0(env, env_min=0, env_max=1)
     env = ss.reshape_v0(env, (4, 84, 84))
 
     env.reset(seed=get_seed(MAX_INT))
@@ -108,6 +108,11 @@ class PZSingleAgentWrapper(gym.Env):
                 return self.opponent_model(t).argmax().item()
         else:
             act, _ = self.opponent_model.predict(obs, deterministic=True)
+            if isinstance(act, np.ndarray):
+                if act.ndim == 0:
+                    act = int(act.item())
+                else:
+                    act = int(act.flatten()[0])
             return act
 
     def reset(self, *, seed=None, options=None):
@@ -141,8 +146,11 @@ class PZSingleAgentWrapper(gym.Env):
                 done = terminated or truncated
                 return obs_agent, reward_agent, done, False, {}
 
-            act = self._opponent_act(obs)
-            self.env.step(act)
+            if terminated or truncated:
+                self.env.step(None)
+            else:
+                act = self._opponent_act(obs)
+                self.env.step(act)
 
     def render(self):
         return self.env.render()

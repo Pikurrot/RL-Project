@@ -4,10 +4,10 @@ import socket
 HOSTNAME = socket.gethostname()
 
 if HOSTNAME == "cudahpc16":
-	# idk who set up this cluster but without this the gpu is not detected
-	os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-	os.environ["CUDA_VISIBLE_DEVICES"] = "5"
-	os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+    # idk who set up this cluster but without this the gpu is not detected
+    os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "5"
+    os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 import numpy as np
 import random
@@ -16,6 +16,7 @@ from pettingzoo.atari import pong_v3
 import gymnasium as gym
 import torch
 from gymnasium import spaces
+import ale_py
 import torch.nn as nn
 import torch.nn.functional as F
 import imageio
@@ -24,6 +25,8 @@ import stable_baselines3
 import wandb
 from wandb.integration.sb3 import WandbCallback
 from pathlib import Path
+
+gym.register_envs(ale_py)
 
 MAX_INT = int(10e6)
 TIME_STEP_MAX = 100000
@@ -57,11 +60,12 @@ def get_seed(MAX_INT=int(10e6)):
 def make_env(render_mode="rgb_array"):
     env = pong_v3.env(num_players=2, render_mode=render_mode)
 
-    env = ss.sticky_actions_v0(env, repeat_action_probability=0.25)
+    # env = ss.sticky_actions_v0(env, repeat_action_probability=0.25)
     env = ss.color_reduction_v0(env, mode="B")
     env = ss.resize_v1(env, x_size=84, y_size=84)
     env = ss.frame_stack_v1(env, 4, stack_dim=0)
-    env = ss.dtype_v0(env, dtype=np.uint8)
+    env = ss.dtype_v0(env, dtype=np.float32)
+    env = ss.normalize_obs_v0(env, env_min=0, env_max=1)
     env = ss.reshape_v0(env, (4, 84, 84))
 
     env.reset(seed=get_seed(MAX_INT))
