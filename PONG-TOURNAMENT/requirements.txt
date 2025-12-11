@@ -1,0 +1,17 @@
+ale-py>=0.10.1
+autorom[accept-rom-license]
+ffmpeg
+gymnasium[other]==1.0.0
+ipykernel
+ipywidgets
+matplotlib
+multi-agent-ale-py==0.1.11
+numpy
+opencv-python
+pathlib>=1.0.1
+pettingzoo[atari]==1.24.3
+pillow
+stable-baselines3[extra]==2.4.0
+SuperSuit==3.9.3
+swig==4.3.0
+wandb
