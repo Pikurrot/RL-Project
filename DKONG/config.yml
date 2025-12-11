@@ -6,7 +6,7 @@ video_dir: ./videos/
 wandb:
   entity: paradigms-team
   project: DonkeyKong
-  run_name: ppo_exp_barrel_reward_cancellation_no_death_penalty_allow_34_1
+  run_name: ppo_exp_all_rewards_cancelled_end_at_level_3
   gradient_save_freq: 100
 
 env:
@@ -19,13 +19,16 @@ env:
       enabled: true
       minimal_actions: [0, 1, 2, 3, 4, 11, 12]
     death_penalty:
-      enabled: true
+      enabled: false
       value: -100
-      allow_for_levels: [3, 4]
+      allow_for_levels: []
     barrel_reward_cancellation:
       enabled: true
-      except_for_levels: [3, 4]
+      except_for_levels: []
       exception_allow_count: 1 # allow only 1 barrel giving reward on these levels
+    hammer_reward_cancellation:
+      enabled: true
+      exception_allow_count: 0 # allow only N hammer hits giving reward
     ladder_climb_reward:
       enabled: true
       reward_per_pixel: 2.0
@@ -54,6 +57,9 @@ env:
     resize_observation:
       enabled: true
       size: [128, 128]
+    end_at_level:
+      enabled: false
+      level: 3
     grayscale_observation: true
     add_channel_dim: true
     scale_observation: true
@@ -97,6 +103,7 @@ model:
     #   total_steps: 5000000
     vf_coef: 0.5 # value function coefficient for the loss calculation
     total_timesteps: 20_000_000 # for training
+    checkpoint_path: null # ppo_exp_barrel_reward_cancellation_no_death_penalty/best/best_model.zip
     policy_kwargs:
       features_extractor_class: CustomCNN
       features_extractor_kwargs:

@@ -72,6 +72,16 @@ class PPO(BaseModel, PPOsb3):
 			policy_kwargs=self.policy_kwargs
 		)
 		self.total_timesteps = self.ppo_config["total_timesteps"]
+		self.pretrained_checkpoint = None
+
+		# Load a pretrained PPO checkpoint (policy + optimizer)
+		checkpoint_path = self.ppo_config.get("checkpoint_path")
+		if checkpoint_path:
+			checkpoints_dir_pretrained = Path(config["checkpoints_dir"])
+			load_path = checkpoints_dir_pretrained / checkpoint_path
+			self.pretrained_checkpoint = str(load_path)
+			print(f"Loading PPO checkpoint from: {self.pretrained_checkpoint}")
+			self.set_parameters(self.pretrained_checkpoint, device=device)
 
 	def learn(
 		self,
