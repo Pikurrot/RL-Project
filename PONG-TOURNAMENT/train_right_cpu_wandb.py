@@ -6,13 +6,12 @@ HOSTNAME = socket.gethostname()
 if HOSTNAME == "cudahpc16":
 	# idk who set up this cluster but without this the gpu is not detected
 	os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-	os.environ["CUDA_VISIBLE_DEVICES"] = "7"
+	os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 	os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 import numpy as np
 import gymnasium as gym
 import imageio
-from gymnasium.wrappers import AtariPreprocessing, FrameStackObservation
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import VecMonitor, SubprocVecEnv, DummyVecEnv
 from stable_baselines3.common.callbacks import EvalCallback, CheckpointCallback, CallbackList, BaseCallback
@@ -20,9 +19,10 @@ import wandb
 from wandb.integration.sb3 import WandbCallback
 import ale_py
 import torch
+import supersuit as ss
 
 
-RUN_NAME = "pong_right_10M_ent_coef_03"
+RUN_NAME = "pong_right_10M_ent_coef_001_solved"
 ROOT_DIR = f"./results/{RUN_NAME}"
 LOG_DIR = os.path.join(ROOT_DIR, "logs")
 MODEL_DIR = f"/data/users/elopez/checkpoints_pong/{RUN_NAME}"
@@ -113,10 +113,21 @@ class VideoLogCallback(BaseCallback):
 # -------------------------------
 
 def make_cpu_env():
-    # IMPORTANT: render_mode="rgb_array" is required for imageio to capture frames
+    """
+    Gym Pong env with the same preprocessing stack used in PongTournamentTest wrappers,
+    expressed with SuperSuit for consistency:
+    - sticky actions (p=0.25)
+    - grayscale, resize 84x84
+    - stack 4 frames, channel-first, float32 normalized to [0,1]
+    """
     env = gym.make("PongNoFrameskip-v4", render_mode="rgb_array")
-    env = AtariPreprocessing(env, screen_size=84, grayscale_obs=True, scale_obs=True)
-    env = FrameStackObservation(env, stack_size=4)
+    env = ss.sticky_actions_v0(env, repeat_action_probability=0.25)
+    env = ss.color_reduction_v0(env, mode="B")
+    env = ss.resize_v1(env, x_size=84, y_size=84)
+    env = ss.frame_stack_v1(env, 4, stack_dim=0)
+    env = ss.dtype_v0(env, dtype=np.float32)
+    env = ss.normalize_obs_v0(env, env_min=0, env_max=1)
+    env = ss.reshape_v0(env, (4, 84, 84))
     return env
 
 if __name__ == "__main__":
@@ -189,7 +200,7 @@ if __name__ == "__main__":
         n_epochs=4,
         clip_range=0.1,
 		gamma=0.99,
-        ent_coef=0.3,
+        ent_coef=0.01,
         vf_coef=0.5,
         device=DEVICE,
         tensorboard_log=os.path.join(ROOT_DIR, "tensorboard"),

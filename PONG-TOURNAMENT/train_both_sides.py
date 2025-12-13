@@ -6,7 +6,7 @@ HOSTNAME = socket.gethostname()
 if HOSTNAME == "cudahpc16":
     # idk who set up this cluster but without this the gpu is not detected
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-    os.environ["CUDA_VISIBLE_DEVICES"] = "7"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
     os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 import numpy as np
@@ -27,14 +27,14 @@ from pathlib import Path
 MAX_INT = int(10e6)
 RUN_NAME = "pong_both_sides"
 N_ENVS = 8
-RIGHT_PRETRAINED_PATH = Path("/data/users/elopez/checkpoints_pong/pong_right_10M_ent_coef_001/best_model.zip")
+RIGHT_PRETRAINED_PATH = Path("/data/users/elopez/checkpoints_pong/pong_right_20M/right_model.zip")
 CHECKPOINT_DIR = Path(f"/data/users/elopez/checkpoints_pong/{RUN_NAME}")
 VIDEOS_DIR = Path(f"./videos/{RUN_NAME}")
 WANDB_ENTITY = "paradigms-team"
 WANDB_PROJECT = "PongTournament"
 WANDB_RUN_NAME = RUN_NAME
 SCRIPT_NAME = Path(__file__).stem
-CYCLES = 10
+CYCLES = 20
 CYCLE_TIMESTEPS = 100_000
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -54,7 +54,7 @@ def get_seed(MAX_INT=int(10e6)):
 
 def make_env(render_mode="rgb_array"):
     env = pong_v3.env(num_players=2, render_mode=render_mode)
-
+    env = ss.sticky_actions_v0(env, repeat_action_probability=0.25)
     env = ss.color_reduction_v0(env, mode="B")
     env = ss.resize_v1(env, x_size=84, y_size=84)
     env = ss.frame_stack_v1(env, 4, stack_dim=0)
@@ -193,8 +193,8 @@ class PZSingleAgentWrapper(gym.Env):
     def close(self):
         self.env.close()
 
-def policy_predict(model, obs, deterministic=True):
-    """Returns an action for PPO opponents."""
+def policy_predict(model, obs, deterministic=False):
+    """Returns an action for PPO opponents (non-deterministic by default, like play.py)."""
     action, _ = model.predict(obs, deterministic=deterministic)
     if isinstance(action, np.ndarray):
         if action.ndim == 0:
@@ -225,7 +225,7 @@ def make_vector_env(player_id: str, opponent_model, n_envs: int = N_ENVS):
         [lambda: PZSingleAgentWrapper(player_id=player_id, opponent_model=opponent_model) for _ in range(n_envs)]
     )
 
-def evaluate_agent(agent, opponent, player_id: str, episodes: int = 5) -> float:
+def evaluate_agent(agent, opponent, player_id: str, episodes: int = 5, max_steps: int = 3_000) -> float:
     """Runs short rollouts to estimate the agent reward versus a fixed opponent."""
     env = PZSingleAgentWrapper(player_id=player_id, opponent_model=opponent)
     rewards = []
@@ -233,15 +233,18 @@ def evaluate_agent(agent, opponent, player_id: str, episodes: int = 5) -> float:
         obs, _ = env.reset()
         done = False
         ep_reward = 0.0
-        while not done:
+        steps = 0
+        while not done and steps < max_steps:
             action = policy_predict(agent, obs, deterministic=True)
             obs, reward, done, _, _ = env.step(action)
             ep_reward += reward
+            steps += 1
         rewards.append(ep_reward)
     env.close()
     if not rewards:
         return 0.0
-    return float(np.mean(rewards))
+    avg_reward = float(np.mean(rewards))
+    return avg_reward
 
 def log_average_reward(agent_label: str, avg_reward: float, step: int | None = None) -> None:
     if wandb.run is None:
@@ -260,7 +263,6 @@ def record_match(left_model, right_model, filename="match.gif", max_steps=3000):
     env.reset()
 
     agent_iter = iter(env.agent_iter())
-
     frames = []
 
     done = False
@@ -271,11 +273,11 @@ def record_match(left_model, right_model, filename="match.gif", max_steps=3000):
         obs, reward, termination, truncation, info = env.last()
 
         if agent == "second_0":
-            act_left = policy_predict(left_model, obs, deterministic=True)
+            act_left = policy_predict(left_model, obs, deterministic=False)
             env.step(act_left)
 
         elif agent == "first_0":
-            act_right = policy_predict(right_model, obs, deterministic=True)
+            act_right = policy_predict(right_model, obs, deterministic=False)
             env.step(act_right)
 
         else:

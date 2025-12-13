@@ -85,9 +85,9 @@ def flip_nature_cnn_weights(model_path, save_path):
 if __name__ == "__main__":
     # --- CONFIGURATION ---
     # Path to your existing GOOD Right-Paddle Model
-    SOURCE_MODEL = "right_good_cpu/final_model_cpu.zip"
+    SOURCE_MODEL = "/data/users/elopez/checkpoints_pong/pong_right_10M_ent_coef_001_solved/best_model.zip"
     
     # Path where you want the new Left-Paddle Model
-    TARGET_MODEL = "pong_left_flipped.zip"
+    TARGET_MODEL = "/data/users/elopez/checkpoints_pong/pong_right_10M_ent_coef_001_solved/left_model.zip"
     
     flip_nature_cnn_weights(SOURCE_MODEL, TARGET_MODEL)
