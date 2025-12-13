@@ -6,7 +6,7 @@ video_dir: ./videos/
 wandb:
   entity: paradigms-team
   project: DonkeyKong
-  run_name: final_a2c
+  run_name: final_ent_coef_05_001
   gradient_save_freq: 100
 
 env:
@@ -40,7 +40,7 @@ env:
       max_bonus: 100
     ladder_alignment_bonus:
       enabled: false
-      bonus: 5.0
+      bonus: 10.0
       x_tolerance: 3.0
       cooldown_steps: 10
     ladder_distance_potential:
@@ -76,7 +76,7 @@ eval:
   video_length: 2000  # max frames to record
 
 model:
-  select_model: A2C
+  select_model: PPO
   save_freq: 10000 # save model every n steps
   DQN:
     policy: CnnPolicy
@@ -98,14 +98,14 @@ model:
     n_steps: 2048 # number of steps to collect before updating the policy
     batch_size: 256
     n_epochs: 10
-    gamma: 0.99
+    gamma: 0.99 # discount factor
     clip_range: 0.1
     ent_coef: 0.01 # entropy coefficient for the loss calculation
     # ent_coef_schedule:
     #   type: cosine
-    #   start: 0.02
-    #   end: 0.005
-    #   total_steps: 5000000
+    #   start: 0.5
+    #   end: 0.01
+    #   total_steps: 7000000
     vf_coef: 0.5 # value function coefficient for the loss calculation
     total_timesteps: 7_000_000 # for training
     checkpoint_path: null # ppo_exp_barrel_reward_cancellation_no_death_penalty/best/best_model.zip
