@@ -417,6 +417,7 @@ for i in range(10):
         50000,
         log_interval=30,
         reset_num_timesteps=False,
+		progress_bar=True,
         callback=make_wandb_callback(f"left_iter_{i}"),
     )
     left_cycle_avg_reward = evaluate_agent(
@@ -438,6 +439,7 @@ for i in range(10):
         50000,
         log_interval=30,
         reset_num_timesteps=False,
+		progress_bar=True,
         callback=make_wandb_callback(f"right_iter_{i}"),
     )
     right_cycle_avg_reward = evaluate_agent(
