@@ -6,7 +6,7 @@ video_dir: ./videos/
 wandb:
   entity: paradigms-team
   project: DonkeyKong
-  run_name: ppo_exp_all_rewards_cancelled_end_at_level_3
+  run_name: final
   gradient_save_freq: 100
 
 env:
@@ -14,10 +14,15 @@ env:
   n_envs: 9
   frame_stack: 4 # number of frames to stack
   wrappers:
+    max_levels: 7
     fire_at_start: true
     minimal_action_space:
       enabled: true
       minimal_actions: [0, 1, 2, 3, 4, 11, 12]
+    screen_completion:
+      enabled: true
+      reward_threshold: 1000
+      termination_delay_steps: 50
     death_penalty:
       enabled: false
       value: -100
@@ -90,7 +95,7 @@ model:
   PPO:
     policy: CnnPolicy
     learning_rate: 1e-4
-    n_steps: 2048
+    n_steps: 2048 # number of steps to collect before updating the policy
     batch_size: 256
     n_epochs: 10
     gamma: 0.99
@@ -102,7 +107,7 @@ model:
     #   end: 0.005
     #   total_steps: 5000000
     vf_coef: 0.5 # value function coefficient for the loss calculation
-    total_timesteps: 20_000_000 # for training
+    total_timesteps: 7_000_000 # for training
     checkpoint_path: null # ppo_exp_barrel_reward_cancellation_no_death_penalty/best/best_model.zip
     policy_kwargs:
       features_extractor_class: CustomCNN
