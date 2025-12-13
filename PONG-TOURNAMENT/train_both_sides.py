@@ -6,7 +6,7 @@ HOSTNAME = socket.gethostname()
 if HOSTNAME == "cudahpc16":
     # idk who set up this cluster but without this the gpu is not detected
     os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
     os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 import numpy as np
@@ -25,9 +25,9 @@ from wandb.integration.sb3 import WandbCallback
 from pathlib import Path
 
 MAX_INT = int(10e6)
-RUN_NAME = "pong_both_sides"
+RUN_NAME = "pong_both_sides_default"
 N_ENVS = 8
-RIGHT_PRETRAINED_PATH = Path("/data/users/elopez/checkpoints_pong/pong_right_20M/right_model.zip")
+RIGHT_PRETRAINED_PATH = Path("/data/users/elopez/checkpoints_pong/pong_right_10M_ent_coef_001_solved/best_model.zip")
 CHECKPOINT_DIR = Path(f"/data/users/elopez/checkpoints_pong/{RUN_NAME}")
 VIDEOS_DIR = Path(f"./videos/{RUN_NAME}")
 WANDB_ENTITY = "paradigms-team"
@@ -167,13 +167,6 @@ class PZSingleAgentWrapper(gym.Env):
     
             if agent == self.player_id:
                 obs_agent = obs
-                # Cancel any reward
-                reward = 0
-                # Penalty for y distance to ball
-                ball_y, ball_x = find_ball(obs)
-                agent_y, agent_x = get_agent_position(obs, self.player_id)
-                if ball_y is not None and agent_y is not None:
-                    reward -= abs(ball_y - agent_y) * 0.1
                 reward_agent = reward
                 done = terminated or truncated
                 if done:
