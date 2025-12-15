@@ -6,7 +6,7 @@ video_dir: ./videos/
 wandb:
   entity: paradigms-team
   project: DonkeyKong
-  run_name: ppo_exp_all_rewards_cancelled_end_at_level_3
+  run_name: final_ent_coef_05_001
   gradient_save_freq: 100
 
 env:
@@ -14,10 +14,15 @@ env:
   n_envs: 9
   frame_stack: 4 # number of frames to stack
   wrappers:
+    max_levels: 7
     fire_at_start: true
     minimal_action_space:
       enabled: true
       minimal_actions: [0, 1, 2, 3, 4, 11, 12]
+    screen_completion:
+      enabled: true
+      reward_threshold: 1000
+      termination_delay_steps: 50
     death_penalty:
       enabled: false
       value: -100
@@ -35,7 +40,7 @@ env:
       max_bonus: 100
     ladder_alignment_bonus:
       enabled: false
-      bonus: 5.0
+      bonus: 10.0
       x_tolerance: 3.0
       cooldown_steps: 10
     ladder_distance_potential:
@@ -78,7 +83,7 @@ model:
     learning_rate: 1e-4
     buffer_size: 50_000 # size of the replay buffer (in transitions)
     learning_starts: 1000 # number of transitions collected before learning starts
-    batch_size: 32 # size of the batch
+    batch_size: 256 # size of the batch
     tau: 1.0 # target network update coefficient (intuitively, the speed of the target network to follow the primary network)
     gamma: 0.99 # discount factor
     train_freq: 4 # update the network every n steps
@@ -86,26 +91,50 @@ model:
     exploration_fraction: 0.1 # fraction of the training steps for exploration
     exploration_initial_eps: 1.0 # initial exploration epsilon
     exploration_final_eps: 0.01 # final exploration epsilon
-    total_timesteps: 100_000 # for training
+    total_timesteps: 7_000_000 # for training
   PPO:
     policy: CnnPolicy
     learning_rate: 1e-4
-    n_steps: 2048
+    n_steps: 2048 # number of steps to collect before updating the policy
     batch_size: 256
     n_epochs: 10
-    gamma: 0.99
+    gamma: 0.99 # discount factor
     clip_range: 0.1
     ent_coef: 0.01 # entropy coefficient for the loss calculation
     # ent_coef_schedule:
     #   type: cosine
-    #   start: 0.02
-    #   end: 0.005
-    #   total_steps: 5000000
+    #   start: 0.5
+    #   end: 0.01
+    #   total_steps: 7000000
     vf_coef: 0.5 # value function coefficient for the loss calculation
-    total_timesteps: 20_000_000 # for training
+    total_timesteps: 7_000_000 # for training
     checkpoint_path: null # ppo_exp_barrel_reward_cancellation_no_death_penalty/best/best_model.zip
     policy_kwargs:
       features_extractor_class: CustomCNN
       features_extractor_kwargs:
         features_dim: 256
         checkpoint_path: inverse_dynamics_v2_1/checkpoints/step_0100000.pt
+  A2C:
+    policy: CnnPolicy
+    learning_rate: 7e-4
+    n_steps: 5
+    gamma: 0.99
+    gae_lambda: 1.0
+    ent_coef: 0.01
+    # ent_coef_schedule:
+    #   type: cosine
+    #   start: 0.02
+    #   end: 0.005
+    #   total_steps: 5000000
+    vf_coef: 0.25
+    max_grad_norm: 0.5
+    rms_prop_eps: 1e-5
+    use_rms_prop: true
+    normalize_advantage: false
+    total_timesteps: 7_000_000
+    checkpoint_path: null
+    policy_kwargs:
+      features_extractor_class: CustomCNN
+      features_extractor_kwargs:
+        features_dim: 256
+        checkpoint_path: null # inverse_dynamics_v2_1/checkpoints/step_0100000.pt

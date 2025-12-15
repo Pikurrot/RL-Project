@@ -153,6 +153,36 @@ class ResizeObservation(GymResizeObservation):
 		super().__init__(env, self.resize_observation)
 
 
+# Handle end-of-screen completion and forced episode termination
+class ScreenCompletion(gym.Wrapper):
+	def __init__(self, env: gym.Env, config: dict):
+		super().__init__(env)
+		my_config = config["env"]["wrappers"]["screen_completion"]
+		self.reward_threshold = my_config["reward_threshold"]
+		self.termination_delay_steps = my_config["termination_delay_steps"]
+		self.countdown = 0
+
+	def reset(self, **kwargs):
+		self.countdown = 0
+		return self.env.reset(**kwargs)
+
+	def step(self, action: int):
+		obs, reward, terminated, truncated, info = self.env.step(action)
+		info = dict(info) if info is not None else {}
+
+		if reward > self.reward_threshold:
+			self.countdown = max(self.countdown, self.termination_delay_steps)
+			info["screen_completed"] = True
+
+		if self.countdown > 0:
+			self.countdown -= 1
+			if self.countdown == 0 and not terminated and not truncated:
+				terminated = True
+				info["screen_completion_timeout"] = True
+
+		return obs, reward, terminated, truncated, info
+
+
 # Death penalty
 # Applied when a life is lost (when a barrel hits Mario)
 class DeathPenalty(gym.Wrapper):
@@ -162,10 +192,12 @@ class DeathPenalty(gym.Wrapper):
 		self.death_penalty = my_config["value"] if isinstance(my_config, dict) else my_config
 		self.allow_for_levels = my_config["allow_for_levels"] if isinstance(my_config, dict) and "allow_for_levels" in my_config else None
 		self.prev_obs = None
+		self.prev_mario_pos = None
 
 	def reset(self, **kwargs):
 		obs, info = self.env.reset(**kwargs)
 		self.prev_obs = obs
+		self.prev_mario_pos = _cached_mario_pos(obs, info)
 		return obs, info
 
 	def step(self, action: int):
@@ -177,12 +209,15 @@ class DeathPenalty(gym.Wrapper):
 		):
 			# on the allowed levels, when a life is lost
 			if self.allow_for_levels is not None:
-				level = get_level(mario_position(self.prev_obs))
-				if level in self.allow_for_levels:
-					reward += self.death_penalty
+				prev_pos = self.prev_mario_pos if self.prev_mario_pos is not None else mario_position(self.prev_obs)
+				if prev_pos is not None:
+					level = get_level(prev_pos)
+					if level in self.allow_for_levels:
+						reward += self.death_penalty
 			else:
 				reward += self.death_penalty
 		self.prev_obs = obs
+		self.prev_mario_pos = _cached_mario_pos(obs, info)
 		return obs, reward, terminated, truncated, info
 
 
@@ -232,6 +267,48 @@ def distance_to_ladders(mario_pos):
 	return distance
 
 
+def _cached_mario_pos(obs, info):
+	if info is not None and "mario_pos" in info:
+		return info["mario_pos"]
+	return mario_position(obs)
+
+
+def _cached_level(obs, info, mario_pos=None):
+	if info is not None and "mario_level" in info:
+		return info["mario_level"]
+	if mario_pos is None:
+		mario_pos = _cached_mario_pos(obs, info)
+	return get_level(mario_pos)
+
+
+def _cached_ladder_distances(obs, info, mario_pos=None):
+	if info is not None and "ladder_distances" in info:
+		return info["ladder_distances"]
+	if mario_pos is None:
+		mario_pos = _cached_mario_pos(obs, info)
+	return distance_to_ladders(mario_pos)
+
+
+class MarioInfoCache(gym.Wrapper):
+	def reset(self, **kwargs):
+		obs, info = self.env.reset(**kwargs)
+		info = self._augment_info(obs, info)
+		return obs, info
+
+	def step(self, action: int):
+		obs, reward, terminated, truncated, info = self.env.step(action)
+		info = self._augment_info(obs, info)
+		return obs, reward, terminated, truncated, info
+
+	def _augment_info(self, obs, info: dict | None) -> dict:
+		info = dict(info) if info is not None else {}
+		mario_pos = mario_position(obs)
+		info.setdefault("mario_pos", mario_pos)
+		info.setdefault("mario_level", get_level(mario_pos))
+		info.setdefault("ladder_distances", distance_to_ladders(mario_pos))
+		return info
+
+
 # Reward for climbing a ladder (must be before ResizeObservation)
 # Applied for a pixel Mario climbs up
 class LadderClimbReward(gym.Wrapper):
@@ -241,19 +318,23 @@ class LadderClimbReward(gym.Wrapper):
 		self.reward_per_pixel = my_config["reward_per_pixel"]
 		self.max_bonus = my_config["max_bonus"]
 		self.prev_obs = None
+		self.prev_mario_pos = None
 
 	def reset(self, **kwargs):
 		obs, info = self.env.reset(**kwargs)
 		self.prev_obs = obs
+		self.prev_mario_pos = _cached_mario_pos(obs, info)
 		return obs, info
 
 	def step(self, action: int):
 		if self.prev_obs is None:
-			self.prev_obs, _ = self.env.reset()
+			self.prev_obs, info_reset = self.env.reset()
+			self.prev_mario_pos = _cached_mario_pos(self.prev_obs, info_reset)
 
-		y_prev = mario_position(self.prev_obs)[0]
+		y_prev = self.prev_mario_pos[0] if self.prev_mario_pos is not None else mario_position(self.prev_obs)[0]
 		obs, reward, terminated, truncated, info = self.env.step(action)
-		y = mario_position(obs)[0]
+		mario_pos = _cached_mario_pos(obs, info)
+		y = mario_pos[0]
 
 		# Only consider an increase of Mario's y position when pressing UP
 		# This avoids rewarding Mario for jumping
@@ -266,6 +347,7 @@ class LadderClimbReward(gym.Wrapper):
 			reward += bonus
 
 		self.prev_obs = obs
+		self.prev_mario_pos = mario_pos
 		return obs, reward, terminated, truncated, info
 
 
@@ -287,13 +369,13 @@ class DistanceToLaddersPenalty(gym.Wrapper):
 
 	def step(self, action: int):
 		obs, reward, terminated, truncated, info = self.env.step(action)
-		mario_pos = mario_position(obs)
-		distance = distance_to_ladders(mario_pos) or [0] # if no ladders (last level) no penalty
-		if np.isnan(np.min(distance)):
+		mario_pos = _cached_mario_pos(obs, info)
+		distances = _cached_ladder_distances(obs, info, mario_pos) or [0] # if no ladders (last level) no penalty
+		if np.isnan(np.min(distances)):
 			# Mario is not on the screen (when died)
 			distance = 0
 		else:
-			distance = np.min(distance)
+			distance = np.min(distances)
 		scale = self.per_pixel_penalty
 		if self.schedule is not None:
 			# Adjust the penalty over time
@@ -301,6 +383,7 @@ class DistanceToLaddersPenalty(gym.Wrapper):
 		reward += scale * distance
 		self.step_count += 1
 		info["mario_pos"] = mario_pos
+		info["ladder_distances"] = distances
 		return obs, reward, terminated, truncated, info
 
 
@@ -321,13 +404,13 @@ class LadderDistancePotential(gym.Wrapper):
 
 	def reset(self, **kwargs):
 		obs, info = self.env.reset(**kwargs)
-		self.prev_potential = self._potential(obs)
+		self.prev_potential = self._potential(obs, info)
 		self.step_count = 0
 		return obs, info
 
 	def step(self, action: int):
 		obs, reward, terminated, truncated, info = self.env.step(action)
-		potential = self._potential(obs)
+		potential = self._potential(obs, info)
 		scale = self.base_scale
 		if self.schedule is not None:
 			scale = self.schedule.value(self.step_count)
@@ -338,9 +421,9 @@ class LadderDistancePotential(gym.Wrapper):
 		self.step_count += 1
 		return obs, reward, terminated, truncated, info
 
-	def _potential(self, obs) -> float:
-		mario_pos = mario_position(obs)
-		distances = distance_to_ladders(mario_pos)
+	def _potential(self, obs, info=None) -> float:
+		mario_pos = _cached_mario_pos(obs, info)
+		distances = _cached_ladder_distances(obs, info, mario_pos)
 		min_distance = np.nanmin(distances)
 		if np.isnan(min_distance):
 			return 0.0
@@ -367,8 +450,8 @@ class LadderAlignmentBonus(gym.Wrapper):
 			self.cooldown -= 1
 			return obs, reward, terminated, truncated, info
 
-		mario_pos = mario_position(obs)
-		distances = distance_to_ladders(mario_pos)
+		mario_pos = _cached_mario_pos(obs, info)
+		distances = _cached_ladder_distances(obs, info, mario_pos)
 		if np.isnan(np.min(distances)):
 			return obs, reward, terminated, truncated, info
 
@@ -397,7 +480,7 @@ class BarrelRewardCancellation(gym.Wrapper):
 	def step(self, action: int):
 		obs, reward, terminated, truncated, info = self.env.step(action)
 		if reward == 100: # a barrel was jumped
-			level = get_level(mario_position(obs))
+			level = _cached_level(obs, info)
 			if level in self.except_for_levels:
 				self.exception_count += 1
 				if self.exception_count > self.exception_allow_count:
@@ -445,9 +528,9 @@ class EndAtLevel(gym.Wrapper):
 
 	def step(self, action: int):
 		obs, reward, terminated, truncated, info = self.env.step(action)
-		mario_pos = info.get("mario_pos", None)
+		mario_pos = _cached_mario_pos(obs, info)
 		if mario_pos is not None:
-			level = get_level(mario_pos)
+			level = _cached_level(obs, info, mario_pos)
 			if level >= self.level:
 				terminated = True
 		return obs, reward, terminated, truncated, info
