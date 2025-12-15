@@ -6,7 +6,7 @@ HOSTNAME = socket.gethostname()
 if HOSTNAME == "cudahpc16":
 	# idk who set up this cluster but without this the gpu is not detected
 	os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-	os.environ["CUDA_VISIBLE_DEVICES"] = "2"
+	os.environ["CUDA_VISIBLE_DEVICES"] = "8"
 	os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 import torch
@@ -16,6 +16,7 @@ import ale_py
 from environment.env import make_vec_env
 from models.DQN import DQN
 from models.PPO import PPO
+from models.A2C import A2C
 from _logging import init_wandb, load_config
 
 gym.register_envs(ale_py)
@@ -33,6 +34,8 @@ if __name__ == "__main__":
 		model = DQN(config, vec_env, device=device)
 	elif config["model"]["select_model"] == "PPO":
 		model = PPO(config, vec_env, device=device)
+	elif config["model"]["select_model"] == "A2C":
+		model = A2C(config, vec_env, device=device)
 	else:
 		raise ValueError(f"Invalid model: {config['model']['select_model']}")
 

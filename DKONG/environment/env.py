@@ -10,6 +10,8 @@ from stable_baselines3.common.vec_env import VecFrameStack, VecVideoRecorder
 from .wrappers import (
 	MinimalActionSpace,
 	FireAtStart,
+	MarioInfoCache,
+	ScreenCompletion,
 	AddChannelDim,
 	ScaleObservation,
 	GrayscaleObservation,
@@ -88,11 +90,16 @@ def make_env(config: dict) -> gym.Env:
 			return val["enabled"]
 		return bool(val)
 
+	env = MarioInfoCache(env)
+
 	if _enabled("fire_at_start"):
 		env = FireAtStart(env)
 
 	if _enabled("minimal_action_space"):
 		env = MinimalActionSpace(env, config)
+
+	if _enabled("screen_completion"):
+		env = ScreenCompletion(env, config)
 
 	if _enabled("death_penalty"):
 		env = DeathPenalty(env, config)
