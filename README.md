@@ -35,6 +35,10 @@ pip install -r requirements.txt
 - Second video shows the agents competing after being trained with Self-Play.
 - Third video shows the agents competing after being trained with Weight Flipping. This is our **best agent**.
 
+### Use our best left & right agents
+The checkpoints are located in `PONG-TOURNAMENT/left_model.zip` and `PONG-TOURNAMENT/right_model.zip`.
+Download them and load them as simple PPO models for the tournament.
+
 
 ## Part 3: Donkey Kong
 ### Run the code
