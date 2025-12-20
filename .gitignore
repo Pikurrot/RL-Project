@@ -210,10 +210,8 @@ __marimo__/
 # Custom
 *.lock
 *.toml
-*.gif
 *.csv
 *.zip
-*.mp4
 DKONG/wandb/
 DKONG/logs/
 *screenlog.0
@@ -226,3 +224,7 @@ PONG-TOURNAMENT/videos/
 PONG-TOURNAMENT/wandb/
 PONG-TOURNAMENT/PongTournamentTest/
 PONG-TOURNAMENT/results/
+DKONG/videos/
+DKONG/*.mp4
+DKONG/*.gif
+DKONG/DKONG
