@@ -1,12 +1,12 @@
-checkpoints_dir: /data/users/elopez/checkpoints_dkong
-checkpoints_dir_pretrained: /data/users/elopez/checkpoints_dkong_pretrained
+checkpoints_dir: . # /data/users/elopez/checkpoints_dkong
+checkpoints_dir_pretrained: null # /data/users/elopez/checkpoints_dkong_pretrained
 monitor_dir: ./logs/
 video_dir: ./videos/
 
 wandb:
   entity: paradigms-team
   project: DonkeyKong
-  run_name: final_ent_coef_05_001
+  run_name: best_model
   gradient_save_freq: 100
 
 env:
@@ -113,7 +113,7 @@ model:
       features_extractor_class: CustomCNN
       features_extractor_kwargs:
         features_dim: 256
-        checkpoint_path: inverse_dynamics_v2_1/checkpoints/step_0100000.pt
+        checkpoint_path: null # inverse_dynamics_v2_1/checkpoints/step_0100000.pt
   A2C:
     policy: CnnPolicy
     learning_rate: 7e-4

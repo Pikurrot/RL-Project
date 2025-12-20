@@ -228,3 +228,4 @@ DKONG/videos/
 DKONG/*.mp4
 DKONG/*.gif
 DKONG/DKONG
+!DKONG/best_model.zip

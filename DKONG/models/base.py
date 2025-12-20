@@ -50,9 +50,20 @@ class CustomCNN(BaseFeaturesExtractor):
 			).shape[1]
 		self.linear = nn.Sequential(nn.Linear(n_flatten, features_dim), nn.ReLU())
 
-		if checkpoint_path is not None:
-			print(f"Loading checkpoint from: {checkpoint_path}")
-			device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+		try:
+			if checkpoint_path is not None:
+				print(f"Loading checkpoint from: {checkpoint_path}")
+				device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+				ckpt = torch.load(checkpoint_path, map_location=device)
+				state = ckpt.get("extractor_state_dict", ckpt)
+				missing, unexpected = self.load_state_dict(state, strict=False)
+				if missing:
+					print(f"Missing keys: {missing}")
+				if unexpected:
+					print(f"Unexpected keys: {unexpected}")
+		except FileNotFoundError:
+			print(f"Checkpoint not found: {checkpoint_path}. Loading from './'")
+			checkpoint_path = "./pretrained_cnn.pt"
 			ckpt = torch.load(checkpoint_path, map_location=device)
 			state = ckpt.get("extractor_state_dict", ckpt)
 			missing, unexpected = self.load_state_dict(state, strict=False)

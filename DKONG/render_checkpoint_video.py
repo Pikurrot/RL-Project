@@ -15,19 +15,19 @@ from models.base import CustomCNN  # noqa: F401
 # --- User options ---------------------------------------------------------
 # Path to the checkpoint to load. If relative, it is resolved under
 # config["checkpoints_dir"].
-CHECKPOINT_OVERRIDE = "ppo_exp_all_rewards_cancelled/best/best_model.zip"
+CHECKPOINT_OVERRIDE = "best_model.zip"
 
 # Number of environment steps (frames after frame stacking) to record.
 VIDEO_STEPS = 2_000
 
 # Override where videos are written. If None, uses config["video_dir"].
 # If relative, it is resolved relative to the project root.
-VIDEO_DIR_OVERRIDE: str | None = "/home/elopez/RL-Project/DKONG/videos/custom"
+VIDEO_DIR_OVERRIDE: str | None = ""
 
 # Override the run_name used for the video directory. This also controls the
 # subfolder created under video_dir. If None, uses the config run_name with
 # RUN_NAME_SUFFIX appended.
-VIDEO_RUN_NAME_OVERRIDE: str | None = CHECKPOINT_OVERRIDE.split("/")[0] + "_video"
+VIDEO_RUN_NAME_OVERRIDE: str | None = "" # CHECKPOINT_OVERRIDE.split("/")[0] + "_video"
 
 # Override the video file prefix (default: "eval-video"). Useful to control
 # the final filename within the video directory.
