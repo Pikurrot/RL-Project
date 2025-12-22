@@ -8,7 +8,7 @@ cd Part1
 pip install -r requirements.txt
 ```
 
-**Train the models (optional)**
+**Train the agents (optional)**
 For training the REINFORCE model run:
 ```
 python REINFORCE.py
@@ -34,7 +34,7 @@ cd PONG-TOURNAMENT
 pip install -r requirements.txt
 ```
 
-**To be done. Explain how to train the agents, flip the weights, evaluate...**
+**Train the agents (optional)**
 The `adversarial_training.ipynb` notebook and `selfPlay.py` file can be run to train models in an adversarial setting (left and right models) or against itself (one model). 
 Please note that we have considered these experiments to be "failed attempts" for not performing as expected.
 
