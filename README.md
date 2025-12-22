@@ -8,7 +8,17 @@ cd Part1
 pip install -r requirements.txt
 ```
 
-**To be done. Explain how to train the agent**
+**Train the models (optional)**
+For training the REINFORCE model run:
+```
+python REINFORCE.py
+```
+This will train and save the model in the specified `SAVE_PATH` directory. Please note this model did not achieve a good performance in our experiments.
+
+For training the DQN model, run the `DQN.ipynb` notebook. 
+This will train and evaluate the agent over time, saving the resulting model in the specified `SAVE_PATH` directory.
+
+Our resulting best model (DQN) is saved as `checkpoint_best.zip`.
 
 
 ### Videos
@@ -25,7 +35,26 @@ pip install -r requirements.txt
 ```
 
 **To be done. Explain how to train the agents, flip the weights, evaluate...**
+The `adversarial_training.ipynb` notebook and `selfPlay.py` file can be run to train models in an adversarial setting (left and right models) or against itself (one model). 
+Please note that we have considered these experiments to be "failed attempts" for not performing as expected.
 
+To train our best performing method, first run:
+```
+python train_right_paddle.py
+```
+This will train and save the model logs and checkpoints, as well as the final version, in the specified `ROOT_DIR`.
+
+To transfer the model's "flipped weights" into a left model, modify the `SOURCE_MODEL` directory and run:
+```
+python flip_weights.py
+```
+This will save the resulting model in the specified `TARGET_MODEL` directory.
+
+For further training for right against left, run:
+```
+python train_both_sides.py
+```
+Checkpoints and videos will be saved in the desired `CHECKPOINT_DIR` and `VIDEOS_DIR`.
 
 ### Videos
 ![](PONG-TOURNAMENT/gifs/adversarial.gif)
